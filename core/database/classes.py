@@ -38,7 +38,6 @@ class User(Base):
     name = Column(String, default=None)
     banned = Column(Boolean, default=False)
     token = Column(String, default=None, unique=True)
-    
     oauth = Column(JSON, default=None)
     
     created_at = Column(DateTime(timezone=True), default=func.now())
@@ -47,6 +46,8 @@ class User(Base):
     
     language = Column(String, default='en')
     theme = Column(String, default=None)
+    group = Column(String, default=None)
+    
     
     def __init__(self, **kwargs):
         self.initialized = True
@@ -71,7 +72,7 @@ class User(Base):
         Raises
         ------
         UserAlreadyExists
-            If user with given id or username already exists.
+            If user with given id, email or username already exists.
         """
         session = Session()
         if 'user_id' not in kwargs:
@@ -210,17 +211,18 @@ class User(Base):
         return Fernet(getenv('SECRET_KEY').encode('utf-8')).decrypt(user.password).decode('utf-8') == password
 
     def __repr__(self) -> str:
-        return f'<User {self.user_id}>'
+        return f'<User @{self.username} [{self.user_id}]>'
 
 
 class Item(Base):
     __tablename__ = 'items'
     
-    item_id = Column(Integer, primary_key=True)
-    created_by = Column(Integer, default=None)
+    item_id = Column(Integer, primary_key=True, unique=True)
+    type = Column(String, default=None)
+    subtype = Column(String, default=None)
+    info = Column(JSON, default=None)
     
-    name = Column(String)
-    url = Column(String)
+    created_by = Column(Integer, default=None)
 
 
 Base.metadata.create_all(engine)
