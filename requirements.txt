@@ -1,3 +1,7 @@
 uvicorn
 fastapi
 slowapi
+pyjwt
+cffi
+sqlalchemy
+python-dotenv

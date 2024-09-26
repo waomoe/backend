@@ -1,3 +1,5 @@
 .venv
 *.pyc
 __pychache__
+*test*.*
+.env

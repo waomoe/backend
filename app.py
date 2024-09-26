@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header, Request, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse
 from typing import Annotated
@@ -6,8 +6,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from datetime import datetime
+from fastapi.routing import APIRoute
+from typing import Callable
 from core import *
-
+    
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(docs_url='/wiki')
@@ -29,7 +31,10 @@ app.add_middleware(
 
 @app.get('/status')
 async def api_status(request: Request):
-    return JSONResponse(
-        status_code=200,
-        content={'status': 'ok', 'timestamp': str(datetime.now())}
-    )
+    try:
+        response = (await User.add(user_id=1, username='nichind')).user_id
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return response
+
+
