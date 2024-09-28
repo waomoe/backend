@@ -5,3 +5,4 @@ pyjwt
 cffi
 sqlalchemy
 python-dotenv
+aiohttp

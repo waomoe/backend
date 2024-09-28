@@ -39,6 +39,7 @@ class User(Base):
     banned = Column(Boolean, default=False)
     token = Column(String, default=None, unique=True)
     oauth = Column(JSON, default=None)
+    api_tokens = Column(JSON, default=None)
     
     created_at = Column(DateTime(timezone=True), default=func.now())
     active_at = Column(DateTime(timezone=True), default=func.now())
@@ -47,6 +48,12 @@ class User(Base):
     language = Column(String, default='en')
     theme = Column(String, default=None)
     group = Column(String, default=None)
+    
+    closed_interactions = Column(JSON, default=None)    
+    
+    blocked_users = Column(JSON, default=None)
+
+    sessions = Column(JSON, default=None)
     
     
     def __init__(self, **kwargs):
@@ -83,7 +90,7 @@ class User(Base):
         if session.query(User).filter_by(user_id=user.user_id).first():
             raise UserAlreadyExists(f'User with id {user.user_id} already exists')
         if session.query(User).filter_by(username=user.username).first() and user.username:
-            raise UserAlreadyExists(f'User with username {user.username} already exists')
+            raise UserAlreadyExists(f'User with username @{user.username} already exists')
         if session.query(User).filter_by(email=user.email).first() and user.email:
             raise UserAlreadyExists(f'User with email {user.email} already exists')
         session.add(user)
@@ -183,6 +190,24 @@ class User(Base):
 
     @classmethod
     async def generate_token(cls, user_id: int) -> str:
+        """
+        Generates a unique token for a given user.
+
+        Parameters
+        ----------
+        user_id : int
+            The ID of the user for whom the token is being generated.
+
+        Returns
+        -------
+        str
+            A unique token associated with the user.
+
+        Raises
+        ------
+        UserNotFound
+            If the user with the given ID does not exist.
+        """
         user = await cls.get(user_id=user_id)
         if user is None:
             raise UserNotFound(f'User with id {user_id} wasn\'t found')
@@ -218,11 +243,16 @@ class Item(Base):
     __tablename__ = 'items'
     
     item_id = Column(Integer, primary_key=True, unique=True)
-    type = Column(String, default=None)
+    kind = Column(String, default=None)
     subtype = Column(String, default=None)
-    info = Column(JSON, default=None)
     
     created_by = Column(Integer, default=None)
-
+    descriptions = Column(JSON, default=None)
+    covers = Column(JSON, default=None)
+    images = Column(JSON, default=None)
+    resources = Column(JSON, default=None)
+    scores = Column(JSON, default=[])
+    rating = Column(String, default=None)
+    
 
 Base.metadata.create_all(engine)

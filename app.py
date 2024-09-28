@@ -12,7 +12,7 @@ from core import *
     
 
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(docs_url='/wiki')
+app = FastAPI(docs_url='/docs')
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -38,3 +38,7 @@ async def api_status(request: Request):
     return response
 
 
+@app.get(f"/account/auth/register")
+async def register(request: Request):
+    headers = dict(request.headers)
+    return await User.add(username='nichind', password='password')
