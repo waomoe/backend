@@ -1,29 +1,29 @@
-from fastapi import FastAPI, Header, Request, HTTPException, APIRouter
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse
-from typing import Annotated
 from slowapi.errors import RateLimitExceeded
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from datetime import datetime
-from fastapi.routing import APIRoute
-from typing import Callable
 from core import *
 from loguru import logger
-import logging
-import sys
 from pprint import pformat
 from loguru._defaults import LOGURU_FORMAT
-from starlette.requests import Request
-    
+from glob import glob
+from os.path import dirname, basename, isfile, join
+import logging
+import sys
 
+    
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(docs_url='/docs')
+
+app.current_version = '1.0.0-dev'
+app.start_at = datetime.now()
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.logger = logger 
 app.logger.add("./logs/{time:YYYY}-{time:MM}-{time:DD}.log", rotation="00:00", level="DEBUG")
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,13 +74,9 @@ app.logger.configure(
 
 logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
 
-
-@app.get('/status')
-async def api_status(request: Request):
-    return 1
-
-
-@app.get(f"/account/auth/register")
-async def register(request: Request):
-    headers = dict(request.headers)
-    return await User.add(username='nichind', password='password')
+modules = glob(join(dirname(__file__) + '/core/methods/', "*.py"))
+__all__ = [basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]
+for module in __all__:
+    module = __import__(f'core.methods.{module}', globals(), locals(), ['Methods'], 0)  
+    module.Methods(app)
+    
