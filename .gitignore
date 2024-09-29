@@ -5,3 +5,4 @@ __pychache__
 .env
 *.sqlite
 .gitignore
+logs/

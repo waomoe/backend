@@ -6,3 +6,4 @@ cffi
 sqlalchemy
 python-dotenv
 aiohttp
+loguru

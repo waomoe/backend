@@ -41,6 +41,9 @@ class User(Base):
     oauth = Column(JSON, default=None)
     api_tokens = Column(JSON, default=None)
     
+    avatar_url = Column(String, default=None)
+    banner_url = Column(String, default=None)
+        
     created_at = Column(DateTime(timezone=True), default=func.now())
     active_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
