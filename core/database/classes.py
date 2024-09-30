@@ -63,6 +63,7 @@ class User(Base):
 
     sessions = Column(JSON, default=None)
     reg_ip = Column(String, default=None)
+    reg_type = Column(String, default=None)
     last_ip = Column(String, default=None)
     ip_history = Column(JSON, default=None)
     

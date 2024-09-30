@@ -1,5 +1,5 @@
 from fastapi import Header, Request, HTTPException, APIRouter
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, PlainTextResponse
 from datetime import datetime
 from ..database import *
 
@@ -9,24 +9,20 @@ class Methods:
         self.path = ''
 
         @app.get(self.path + '/', include_in_schema=False)
-        async def root(request: Request):
-            return RedirectResponse('/status')
+        async def root(request: Request) -> RedirectResponse:
+            return RedirectResponse('/docs')
         
         @app.get(self.path + '/status')
-        async def status(request: Request):
+        async def status(request: Request) -> JSONResponse:
             return JSONResponse(
                 {'status': 'ok', 'current_version': app.current_version, 'uptime': str(datetime.now() - app.start_at), "server_time": str(datetime.now())},
                 headers=app.no_cache_headers
             )
         
         @app.get(self.path + '/version')
-        async def version(request: Request):
+        async def version(request: Request) -> PlainTextResponse:
             return app.current_version
         
-        @app.get(self.path + '/github')
-        async def github(request: Request):
+        @app.get(self.path + '/github', include_in_schema=False)
+        async def github(request: Request) -> RedirectResponse:
             return RedirectResponse('https://github.com/waomoe')
-        
-        @app.get('/favicon.ico', include_in_schema=False)
-        async def favicon():
-            return FileResponse('./api_logo.png', headers=app.no_cache_headers)

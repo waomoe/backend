@@ -1,8 +1,9 @@
 from fastapi import Header, Request, HTTPException, APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Annotated
+from typing import Annotated, Literal
 from datetime import datetime, timedelta
+from re import match
 from ..database import *
 
 class Methods:
@@ -15,15 +16,15 @@ class Methods:
             password: str
 
         @app.get(self.path + '/')
-        async def root(request: Request):
+        async def root(request: Request) -> JSONResponse:
             return JSONResponse({"avaliable_methods": ["auth"]})
 
         @app.get(self.path + f"/auth/")
-        async def auth(request: Request):
+        async def auth(request: Request) -> JSONResponse:
             return JSONResponse({"avaliable_methods": ["register", "login"]})
 
         @app.post(self.path + f"/auth/register")
-        async def register(request: Request, account: Account, type: str = 'default'):
+        async def register(request: Request, account: Account, type: Literal['default', 'google', 'github'] = 'default') -> JSONResponse:
             headers = dict(request.headers) 
             errors = []
             
@@ -41,6 +42,9 @@ class Methods:
             
             if account.email and await User.get(email=account.email):
                 errors.append('Email already used')
+            
+            if account.email and not match(r"[^@]+@[^@]+\.[^@]+", account.email):
+                errors.append('Invalid email address')
             
             if len(account.password) < 8:
                 errors.append('Password must be at least 8 characters long')
@@ -62,6 +66,7 @@ class Methods:
                         email=account.email,
                         password=account.password,
                         reg_ip=headers['x-real-ip'],
+                        reg_type=type if type != 'default' else None
                     )
                     return JSONResponse(
                         {"message": "User created successfully", "user_id": user.user_id, "token": await User.generate_token(user.user_id)},
@@ -74,7 +79,7 @@ class Methods:
             return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
         
         @app.post(self.path + f"/auth/login")
-        async def login(request: Request, account: Account):
+        async def login(request: Request, account: Account) -> JSONResponse:
             headers = dict(request.headers) 
             errors = []
             
@@ -97,8 +102,33 @@ class Methods:
                  
             return JSONResponse({"message": "User logged in successfully", "user_id": user.user_id, "token": user.token if user.token else await User.generate_token(user.user_id)}, status_code=201, headers=app.no_cache_headers)
 
+        @app.post(self.path + f"/auth/resetToken")
+        async def resetToken(request: Request, account: Account) -> JSONResponse:
+            errors = []
+            
+            if account.email is None and account.username is None:
+                errors.append('Either username or email must be provided')
+                
+            user = await User.get(username=account.username) if account.username else await User.get(email=account.email)
+            if user is None:
+                errors.append('Username or password not found')
+            else:
+                if await User.compare_password(user.user_id, account.password):
+                    return JSONResponse(
+                        {
+                            "message": "Token reset successful", 
+                            "user_id": user.user_id,
+                            "token": await User.generate_token(user.user_id)
+                        }, status_code=201, headers=app.no_cache_headers
+                    )
+                else:
+                    errors.append('Username or password not found')
+            
+            if len(errors) > 0:
+                return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
+
         @app.get(self.path + f"/auth/getMe")
-        async def getMe(request: Request, x_authorization: Annotated[str, Header()]):
+        async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
             
             print(x_authorization)
@@ -116,28 +146,3 @@ class Methods:
                     "closed_interactions": user.closed_interactions
                 }, status_code=200, headers=app.no_cache_headers
             )
-            
-        @app.get(self.path + f"/auth/resetToken")
-        async def resetToken(request: Request, account: Account):
-            errors = []
-            
-            if account.email is None and account.username is None:
-                errors.append('Either username or email must be provided')
-                
-            user = await User.get(username=account.username) if account.username else await User.get(email=account.email)
-            if user is None:
-                errors.append('User not found')
-            
-            if await User.compare_password(user.user_id, account.password):
-                return JSONResponse(
-                    {
-                        "message": "Token reset successful", 
-                        "user_id": user.user_id,
-                        "token": await User.generate_token(user.user_id)
-                    }, status_code=201, headers=app.no_cache_headers
-                )
-
-            errors.append('Token reset failed')
-            
-            if len(errors) > 0:
-                return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
