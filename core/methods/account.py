@@ -23,7 +23,7 @@ class Methods:
             return JSONResponse({"avaliable_methods": ["register", "login"]})
 
         @app.post(self.path + f"/auth/register")
-        async def register(request: Request, account: Account):
+        async def register(request: Request, account: Account, type: str = 'default'):
             headers = dict(request.headers) 
             errors = []
             
@@ -85,9 +85,7 @@ class Methods:
                 errors.append('Either username or email must be provided')
                 
             user = await User.get(username=account.username) if account.username else await User.get(email=account.email)
-            if user is None:
-                errors.append('User or password is incorrect')
-            elif not await User.compare_password(user.user_id, account.password):
+            if user is None or not await User.compare_password(user.user_id, account.password):
                 errors.append('User or password is incorrect')
             
             if len(errors) > 0:
@@ -97,7 +95,7 @@ class Methods:
                 user.ip_history = user.ip_history + [headers['x-real-ip']] if user.ip_history else [headers['x-real-ip']]
             await User.update(user.user_id, active_at=datetime.utcnow(), last_ip=headers['x-real-ip'], ip_history=user.ip_history)
                  
-            return JSONResponse({"message": "User logged in successfully", "user_id": user.user_id, "token": user.token if user.token else await User.generate_token(user.user_id)}, status_code=200, headers=app.no_cache_headers)
+            return JSONResponse({"message": "User logged in successfully", "user_id": user.user_id, "token": user.token if user.token else await User.generate_token(user.user_id)}, status_code=201, headers=app.no_cache_headers)
 
         @app.get(self.path + f"/auth/getMe")
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]):
@@ -118,3 +116,28 @@ class Methods:
                     "closed_interactions": user.closed_interactions
                 }, status_code=200, headers=app.no_cache_headers
             )
+            
+        @app.get(self.path + f"/auth/resetToken")
+        async def resetToken(request: Request, account: Account):
+            errors = []
+            
+            if account.email is None and account.username is None:
+                errors.append('Either username or email must be provided')
+                
+            user = await User.get(username=account.username) if account.username else await User.get(email=account.email)
+            if user is None:
+                errors.append('User not found')
+            
+            if await User.compare_password(user.user_id, account.password):
+                return JSONResponse(
+                    {
+                        "message": "Token reset successful", 
+                        "user_id": user.user_id,
+                        "token": await User.generate_token(user.user_id)
+                    }, status_code=201, headers=app.no_cache_headers
+                )
+
+            errors.append('Token reset failed')
+            
+            if len(errors) > 0:
+                return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)

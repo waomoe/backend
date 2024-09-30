@@ -2,6 +2,7 @@
 
 host=localhost
 port=8741
+
 source .venv/bin/activate
 python_executable=$(which python3.11)
 echo "Starting wao.moe backend on $host:$port with $python_executable" 

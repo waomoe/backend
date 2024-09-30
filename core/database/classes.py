@@ -3,7 +3,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timezone
 from typing import Self, List
-from jwt import encode, decode
 from uuid import uuid4
 import base64
 import os
