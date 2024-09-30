@@ -29,7 +29,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -73,6 +73,8 @@ app.logger.configure(
     ])
 
 logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
+
+app.no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
 
 modules = glob(join(dirname(__file__) + '/core/methods/', "*.py"))
 __all__ = [basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]

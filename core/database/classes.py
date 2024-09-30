@@ -32,6 +32,7 @@ class User(Base):
         
     user_id = Column(Integer, primary_key=True, unique=True)
     email = Column(String, default=None, unique=True)
+    email_confirm_key = Column(String, default=None)
     password = Column(String, default=None)
     two_factor = Column(String, default=None)
     username = Column(String, default=None, unique=True)
@@ -45,6 +46,7 @@ class User(Base):
     banner_url = Column(String, default=None)
         
     created_at = Column(DateTime(timezone=True), default=func.now())
+    email_confirmed_at = Column(DateTime(timezone=True), default=None)
     active_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     
@@ -53,10 +55,17 @@ class User(Base):
     group = Column(String, default=None)
     
     closed_interactions = Column(JSON, default=None)    
+
+    following = Column(JSON, default=None)
+    subscribed = Column(JSON, default=None)
+    favorites = Column(JSON, default=None)
     
     blocked_users = Column(JSON, default=None)
 
     sessions = Column(JSON, default=None)
+    reg_ip = Column(String, default=None)
+    last_ip = Column(String, default=None)
+    ip_history = Column(JSON, default=None)
     
     
     def __init__(self, **kwargs):
@@ -220,7 +229,7 @@ class User(Base):
         f = Fernet(base64.urlsafe_b64encode(kdf.derive(password)))
         encMessage = f.encrypt(f'{user.user_id}'.encode('utf-8'))
         
-        if cls.get(token=encMessage.decode('utf-8')):
+        if await cls.get(token=encMessage.decode('utf-8')):
             return await cls.generate_token(user_id)
         
         await cls.update(user_id=user.user_id, token=encMessage.decode('utf-8'))
