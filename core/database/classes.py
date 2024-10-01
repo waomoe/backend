@@ -26,7 +26,7 @@ class PerfomanceMeter:
     all = [0]
 
     def report(self):
-        sleep(15)
+        sleep(300)
         logger.info(f'Total database actions performed since start: {len(self.all)}')
         logger.info(f'Average time per action: {sum(self.all) / len(self.all)}s')
         logger.info(f'Average time per action (last 100): {sum(self.all[-100:]) / len(self.all[-100:])}s')
@@ -75,7 +75,8 @@ class User(Base):
 
     following = Column(JSON, default=None)
     subscribed = Column(JSON, default=None)
-    favorites = Column(JSON, default=None)
+    
+    scores = Column(JSON, default=None)
     
     blocked_users = Column(JSON, default=None)
 
@@ -128,6 +129,10 @@ class User(Base):
         if user.password:
             await cls.update(user_id=user.user_id, password=user.password)
         session.close()
+
+        if not await ItemList.get(author_id=kwargs['user_id'], kind='favorites'):
+            await ItemList.add(author_id=kwargs['user_id'], kind='favorites', name='Favorites')
+        
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(user_id=kwargs['user_id'])
 
@@ -287,8 +292,10 @@ class Post(Base):
     parent_id = Column(Integer, default=None)
     author_id = Column(Integer, default=None)
     deleted = Column(Boolean, default=False)
+    hidden = Column(Boolean, default=False)
     
     content = Column(String, default=None)
+    tags = Column(JSON, default=None)
     kind = Column(String, default=None)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -298,5 +305,209 @@ class Post(Base):
     upvotes = Column(JSON, default=[])
     downvotes = Column(JSON, default=[])
     reactions = Column(JSON, default=[])
+
+    @classmethod
+    async def add(cls, **kwargs) -> Self:
+        start_at = datetime.now()
+        session = Session()
+        if 'post_id' not in kwargs:
+            kwargs['post_id'] = len(await cls.get_all()) + 1
+        post = Post(**kwargs)
+        session.add(post)
+        session.commit()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(post_id=post.post_id)
+    
+    @classmethod
+    async def get(cls, **kwargs) -> Self | None:
+        start_at = datetime.now()
+        session = Session()
+        post = session.query(Post).filter_by(**kwargs).first()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return post
+    
+    @classmethod
+    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
+        start_at = datetime.now()
+        session = Session()
+        posts = session.query(Post).filter_by(**kwargs).all()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return posts
+    
+    @classmethod
+    async def update(cls, post_id: int = None, **kwargs) -> Self:
+        start_at = datetime.now()
+        session = Session()
+        if post_id is None and cls.initialized is False:
+            raise PostNotInitialized(f'Post was not initialized and post_id was not provided')
+        post = session.query(Post).filter_by(post_id=post_id).first()
+        if post is None:
+            raise PostNotFound(f'Post with id {post_id} wasn\'t found')
+        for key, value in kwargs.items():
+            setattr(post, key, value)
+        session.commit()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(post_id=post.post_id)
+
+    def __repr__(self) -> str:
+        return f'<Post #{self.post_id} [{self.author_id}]>'
+
+
+class ItemList(Base):
+    __tablename__ = 'lists'
+    
+    list_id = Column(Integer, primary_key=True, unique=True)
+    parent_id = Column(Integer, default=None)
+    author_id = Column(Integer, default=None)
+    deleted = Column(Boolean, default=False)
+    hidden = Column(Boolean, default=False)
+    
+    name = Column(String, default=None)
+    description = Column(String, default=None)
+    kind = Column(String, default=None)
+    items = Column(JSON, default=None)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    edit_at = Column(DateTime(timezone=True), server_default=None)
+    update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    upvotes = Column(JSON, default=[])
+    downvotes = Column(JSON, default=[])
+    reactions = Column(JSON, default=[])
+
+    @classmethod
+    async def add(cls, **kwargs) -> Self:
+        start_at = datetime.now()
+        session = Session()
+        if 'list_id' not in kwargs:
+            kwargs['list_id'] = len(await cls.get_all()) + 1
+        list = ItemList(**kwargs)
+        session.add(list)
+        session.commit()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(list_id=kwargs['list_id'])
+    
+    @classmethod
+    async def get(cls, **kwargs) -> Self | None:
+        start_at = datetime.now()
+        session = Session()
+        list = session.query(ItemList).filter_by(**kwargs).first()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return list
+    
+    @classmethod
+    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
+        start_at = datetime.now()
+        session = Session()
+        lists = session.query(ItemList).filter_by(**kwargs).all()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return lists
+    
+    @classmethod
+    async def update(cls, list_id: int = None, **kwargs) -> Self:
+        start_at = datetime.now()
+        session = Session()
+        if list_id is None and cls.initialized is False:
+            raise ListNotInitialized(f'List was not initialized and list_id was not provided')
+        list = session.query(ItemList).filter_by(list_id=list_id).first()
+        if list is None:
+            raise ListNotFound(f'List with id {list_id} wasn\'t found')
+        for key, value in kwargs.items():
+            setattr(list, key, value)
+        session.commit()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(list_id=list.list_id)
+
+
+class Item(Base):
+    __tablename__ = 'items'
+    
+    item_id = Column(Integer, primary_key=True, unique=True)
+    parent_id = Column(Integer, default=None)
+    author_id = Column(Integer, default=None)
+    deleted = Column(Boolean, default=False)
+    hidden = Column(Boolean, default=False)
+    
+    name = Column(String, default=None)
+    description = Column(String, default=None)
+    kind = Column(String, default=None)
+    data = Column(JSON, default=None)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    edit_at = Column(DateTime(timezone=True), server_default=None)
+    update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    upvotes = Column(JSON, default=[])
+    downvotes = Column(JSON, default=[])
+    
+    resources_id = Column(JSON, default=None)
+
+    @classmethod
+    async def add(cls, **kwargs) -> Self:
+        start_at = datetime.now()
+        session = Session()
+        if 'item_id' not in kwargs:
+            kwargs['item_id'] = len(await cls.get_all()) + 1
+        item = Item(**kwargs)
+        session.add(item)
+        session.commit()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(item_id=kwargs['item_id'])
+    
+    @classmethod
+    async def get(cls, **kwargs) -> Self | None:
+        start_at = datetime.now()
+        session = Session()
+        item = session.query(Item).filter_by(**kwargs).first()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return item
+    
+    @classmethod
+    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
+        start_at = datetime.now()
+        session = Session()
+        items = session.query(Item).filter_by(**kwargs).all()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return items
+    
+    @classmethod
+    async def update(cls, item_id: int = None, **kwargs) -> Self:
+        start_at = datetime.now()
+        session = Session()
+        if item_id is None and cls.initialized is False:
+            raise ItemNotInitialized(f'Item was not initialized and item_id was not provided')
+        item = session.query(Item).filter_by(item_id=item_id).first()
+        if item is None:
+            raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
+        for key, value in kwargs.items():
+            setattr(item, key, value)
+        session.commit()
+        session.expunge_all()
+        session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(item_id=item.item_id)
+
 
 Base.metadata.create_all(engine)

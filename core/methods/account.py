@@ -75,6 +75,7 @@ class Methods:
                 except UserAlreadyExists:
                     errors.append('User already exists')
                 except Exception as e:
+                    app.logger.error(e)
                     errors.append('An error occurred...')
             
             return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
@@ -132,7 +133,6 @@ class Methods:
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
             
-            print(x_authorization)
             user = await User.get(token=x_authorization)
             if user is None:
                 errors.append('User not found')
@@ -144,6 +144,7 @@ class Methods:
                 {
                     "user_id": user.user_id, "username": user.username, "email": user.email,
                     "sessions": user.sessions, "language": user.language, "theme": user.theme,
-                    "closed_interactions": user.closed_interactions
+                    "closed_interactions": user.closed_interactions,
+                    "favorites_list_id": (await ItemList.get(author_id=user.user_id, kind='favorites')).list_id
                 }, status_code=200, headers=app.no_cache_headers
             )

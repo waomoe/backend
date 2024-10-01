@@ -80,7 +80,7 @@ app.no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate", 
 
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
-    return FileResponse('./api-logo.png', headers=app.no_cache_headers)
+    return FileResponse('./api-logo.png')
 
 
 app.logger.info(f'Starting wao.moe backend...')
