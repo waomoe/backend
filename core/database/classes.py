@@ -439,13 +439,17 @@ class Item(Base):
     __tablename__ = 'items'
     
     item_id = Column(Integer, primary_key=True, unique=True)
+    
     parent_id = Column(Integer, default=None)
     author_id = Column(Integer, default=None)
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
     
     name = Column(String, default=None)
+    name_localized = Column(JSON, default=None)
     description = Column(String, default=None)
+    description_localized = Column(JSON, default=None)
+    
     kind = Column(String, default=None)
     data = Column(JSON, default=None)
     
@@ -456,7 +460,7 @@ class Item(Base):
     upvotes = Column(JSON, default=[])
     downvotes = Column(JSON, default=[])
     
-    resources_id = Column(JSON, default=None)
+    mal_id = Column(Integer, default=None)
 
     @classmethod
     async def add(cls, **kwargs) -> Self:

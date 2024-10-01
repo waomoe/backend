@@ -21,6 +21,9 @@ class Methods:
         
         @app.get(self.path + '/database')
         async def database(request: Request) -> JSONResponse:
+            await User.get_all()
+            await ItemList.get_all()
+            await Item.get_all()
             return JSONResponse(
                 {
                     'status': 'ok' if sum(perfomance.all[-100:]) / len(perfomance.all[-100:]) < 0.15 else 'slow',
