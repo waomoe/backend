@@ -19,6 +19,15 @@ class Methods:
                 headers=app.no_cache_headers
             )
         
+        @app.get(self.path + '/database')
+        async def database(request: Request) -> JSONResponse:
+            return JSONResponse(
+                {
+                    "average_action_time": sum(perfomance.all) / len(perfomance.all),
+                    "average_action_time_last_100": sum(perfomance.all[-100:]) / len(perfomance.all[-100:])
+                },
+            )
+        
         @app.get(self.path + '/version')
         async def version(request: Request) -> PlainTextResponse:
             return app.current_version

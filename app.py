@@ -83,9 +83,14 @@ async def favicon():
     return FileResponse('./api-logo.png', headers=app.no_cache_headers)
 
 
+app.logger.info(f'Starting wao.moe backend...')
+
 modules = glob(join(dirname(__file__) + '/core/methods/', "*.py"))
 __all__ = [basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]
 for module in __all__:
     module = __import__(f'core.methods.{module}', globals(), locals(), ['Methods'], 0)  
     module.Methods(app)
+    app.logger.info(f'Loaded {module.__name__} methods')
+    
+app.logger.success(f'Started wao.moe backend v{app.current_version} in {datetime.now() - app.start_at}')
     

@@ -68,6 +68,7 @@ class Methods:
                         reg_ip=headers['x-real-ip'],
                         reg_type=type if type != 'default' else None
                     )
+                    app.logger.info(f'User {user.user_id} created | ip: {headers["x-real-ip"]}')
                     return JSONResponse(
                         {"message": "User created successfully", "user_id": user.user_id, "token": await User.generate_token(user.user_id)},
                         status_code=201, headers=app.no_cache_headers)

@@ -11,11 +11,28 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from os import getenv
 from dotenv import load_dotenv, find_dotenv
+from threading import Thread
+from time import sleep
+from loguru import logger
 from .exceptions import *
 
 
 engine = create_engine('sqlite:///./waomoe.sqlite?check_same_thread=False')
 Base = declarative_base()
+
+
+class PerfomanceMeter:
+    start = datetime.now()
+    all = [0]
+
+    def report(self):
+        sleep(15)
+        logger.info(f'Total database actions performed since start: {len(self.all)}')
+        logger.info(f'Average time per action: {sum(self.all) / len(self.all)}s')
+        logger.info(f'Average time per action (last 100): {sum(self.all[-100:]) / len(self.all[-100:])}s')
+
+perfomance = PerfomanceMeter()
+Thread(target=perfomance.report).start()
 
 
 class Session(sessionmaker):
@@ -37,13 +54,14 @@ class User(Base):
     username = Column(String, default=None, unique=True)
     name = Column(String, default=None)
     banned = Column(Boolean, default=False)
+    hidden = Column(Boolean, default=False)
     token = Column(String, default=None, unique=True)
     oauth = Column(JSON, default=None)
     api_tokens = Column(JSON, default=None)
     
     avatar_url = Column(String, default=None)
     banner_url = Column(String, default=None)
-        
+      
     created_at = Column(DateTime(timezone=True), default=func.now())
     email_confirmed_at = Column(DateTime(timezone=True), default=None)
     active_at = Column(DateTime(timezone=True), default=func.now())
@@ -66,7 +84,6 @@ class User(Base):
     reg_type = Column(String, default=None)
     last_ip = Column(String, default=None)
     ip_history = Column(JSON, default=None)
-    
     
     def __init__(self, **kwargs):
         self.initialized = True
@@ -93,6 +110,7 @@ class User(Base):
         UserAlreadyExists
             If user with given id, email or username already exists.
         """
+        start_at = datetime.now()
         session = Session()
         if 'user_id' not in kwargs:
             kwargs['user_id'] = len(await cls.get_all()) + 1
@@ -110,6 +128,7 @@ class User(Base):
         if user.password:
             await cls.update(user_id=user.user_id, password=user.password)
         session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(user_id=kwargs['user_id'])
 
     @classmethod
@@ -127,10 +146,12 @@ class User(Base):
         Self | None
             User object if found, None if not.
         """
+        start_at = datetime.now()
         session = Session()
         user = session.query(User).filter_by(**kwargs).first()
         session.expunge_all()
         session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return user
 
     @classmethod
@@ -148,10 +169,12 @@ class User(Base):
         List[Self] | List[None] | None
             List of User objects if found, empty list if not or None if criteria is not valid.
         """
+        start_at = datetime.now()
         session = Session()
         users = session.query(User).filter_by(**kwargs).all()
         session.expunge_all()
         session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return users
 
     @classmethod
@@ -180,6 +203,7 @@ class User(Base):
         UserAlreadyExists
             If user with given username or email already exists.
         """
+        start_at = datetime.now()
         session = Session()
         if user_id is None and cls.initialized is False:
             raise UserNotInitialized(f'User was not initialized and user_id was not provided')
@@ -198,6 +222,7 @@ class User(Base):
         session.commit()
         session.expunge_all()
         session.close()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(user_id=user_id)
 
     @classmethod
@@ -220,6 +245,7 @@ class User(Base):
         UserNotFound
             If the user with the given ID does not exist.
         """
+        start_at = datetime.now()
         user = await cls.get(user_id=user_id)
         if user is None:
             raise UserNotFound(f'User with id {user_id} wasn\'t found')
@@ -233,6 +259,7 @@ class User(Base):
             return await cls.generate_token(user_id)
         
         await cls.update(user_id=user.user_id, token=encMessage.decode('utf-8'))
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return encMessage.decode('utf-8')
 
     @classmethod
@@ -242,29 +269,34 @@ class User(Base):
      
     @classmethod
     async def compare_password(cls, user_id: int, password: str):
+        start_at = datetime.now()
         user = await cls.get(user_id=user_id)
         if user is None:
             raise UserNotFound(f'User with id {user_id} wasn\'t found')
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return Fernet(getenv('SECRET_KEY').encode('utf-8')).decrypt(user.password).decode('utf-8') == password
 
     def __repr__(self) -> str:
         return f'<User @{self.username} [{self.user_id}]>'
 
 
-class Item(Base):
-    __tablename__ = 'items'
+class Post(Base):
+    __tablename__ = 'posts'
     
-    item_id = Column(Integer, primary_key=True, unique=True)
+    post_id = Column(Integer, primary_key=True, unique=True)
+    parent_id = Column(Integer, default=None)
+    author_id = Column(Integer, default=None)
+    deleted = Column(Boolean, default=False)
+    
+    content = Column(String, default=None)
     kind = Column(String, default=None)
-    subtype = Column(String, default=None)
     
-    created_by = Column(Integer, default=None)
-    descriptions = Column(JSON, default=None)
-    covers = Column(JSON, default=None)
-    images = Column(JSON, default=None)
-    resources = Column(JSON, default=None)
-    scores = Column(JSON, default=[])
-    rating = Column(String, default=None)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    edit_at = Column(DateTime(timezone=True), server_default=None)
+    update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
+    upvotes = Column(JSON, default=[])
+    downvotes = Column(JSON, default=[])
+    reactions = Column(JSON, default=[])
 
 Base.metadata.create_all(engine)
