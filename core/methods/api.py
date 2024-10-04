@@ -21,13 +21,12 @@ class Methods:
         
         @app.get(self.path + '/database')
         async def database(request: Request) -> JSONResponse:
-            await User.get_all()
-            await ItemList.get_all()
-            await Item.get_all()
+            await User.get()
             return JSONResponse(
                 {
-                    'status': 'ok' if sum(perfomance.all[-100:]) / len(perfomance.all[-100:]) < 0.15 else 'slow',
+                    'status': 'ok' if sum(perfomance.all[-100:]) / len(perfomance.all[-100:]) < 0.09 else 'slow',
                     "average_action_time": sum(perfomance.all) / len(perfomance.all),
+                    "average_action_time_last_1000": sum(perfomance.all[-1000:]) / len(perfomance.all[-1000:]),
                     "average_action_time_last_100": sum(perfomance.all[-100:]) / len(perfomance.all[-100:])
                 }, headers=app.no_cache_headers)
         
@@ -38,3 +37,4 @@ class Methods:
         @app.get(self.path + '/github', include_in_schema=False)
         async def github(request: Request) -> RedirectResponse:
             return RedirectResponse('https://github.com/waomoe')
+        

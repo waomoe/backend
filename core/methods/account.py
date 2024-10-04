@@ -4,7 +4,11 @@ from pydantic import BaseModel
 from typing import Annotated, Literal
 from datetime import datetime, timedelta
 from re import match
+from string import ascii_letters, digits
+from random import choice
 from ..database import *
+from ..other.email import Email
+
 
 class Methods:
     def __init__(self, app):
@@ -61,23 +65,26 @@ class Methods:
                             
             if len(errors) == 0:
                 try:
+                    email_confirm_key = "".join(choice(ascii_letters + digits) for _ in range(24))
                     user = await User.add(
                         username=account.username,
                         email=account.email,
                         password=account.password,
                         reg_ip=headers['x-real-ip'],
-                        reg_type=type if type != 'default' else None
+                        reg_type=type if type != 'default' else None,
+                        email_confirm_key=email_confirm_key
                     )
                     app.logger.info(f'User {user.user_id} created | ip: {headers["x-real-ip"]}')
+                    if account.email:
+                        Email().send(email=account.email, subject='Your registration code', preset='confirm-email', user=user.user_id, key_url=email_confirm_key, ip=headers["x-real-ip"])
                     return JSONResponse(
                         {"message": "User created successfully", "user_id": user.user_id, "token": await User.generate_token(user.user_id)},
                         status_code=201, headers=app.no_cache_headers)
                 except UserAlreadyExists:
                     errors.append('User already exists')
-                except Exception as e:
-                    app.logger.error(e)
-                    errors.append('An error occurred...')
-            
+                # except Exception as e:
+                #     app.logger.error(e)
+                #     errors.append('An error occurred...')
             return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
         
         @app.post(self.path + f"/auth/login")

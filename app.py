@@ -93,4 +93,3 @@ for module in __all__:
     app.logger.info(f'Loaded {module.__name__} methods')
     
 app.logger.success(f'Started wao.moe backend v{app.current_version} in {datetime.now() - app.start_at}')
-    

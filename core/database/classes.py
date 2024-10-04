@@ -29,6 +29,7 @@ class PerfomanceMeter:
         sleep(300)
         logger.info(f'Total database actions performed since start: {len(self.all)}')
         logger.info(f'Average time per action: {sum(self.all) / len(self.all)}s')
+        logger.info(f'Average time per action (last 1k): {sum(self.all[-1000:]) / len(self.all[-1000:])}s')
         logger.info(f'Average time per action (last 100): {sum(self.all[-100:]) / len(self.all[-100:])}s')
 
 perfomance = PerfomanceMeter()
@@ -220,6 +221,7 @@ class User(Base):
         if 'email' in kwargs and await cls.get(email=kwargs['email']) is not None:
             raise UserAlreadyExists(f'User with email {kwargs["email"]} already exists')
         if 'password' in kwargs:
+            load_dotenv()
             kwargs['password'] = Fernet(getenv('SECRET_KEY').encode('utf-8')).encrypt(user.password.encode('utf-8')).decode('utf-8')
             
         for key, value in kwargs.items():
@@ -449,13 +451,11 @@ class Item(Base):
     name_localized = Column(JSON, default=None)
     description = Column(String, default=None)
     description_localized = Column(JSON, default=None)
+    rating = Column(String, default=None)
+    
     
     kind = Column(String, default=None)
     data = Column(JSON, default=None)
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    edit_at = Column(DateTime(timezone=True), server_default=None)
-    update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     upvotes = Column(JSON, default=[])
     downvotes = Column(JSON, default=[])
