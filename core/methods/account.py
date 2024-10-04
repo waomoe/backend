@@ -7,7 +7,6 @@ from re import match
 from string import ascii_letters, digits
 from random import choice
 from ..database import *
-from ..other.email import Email
 
 
 class Methods:
@@ -25,7 +24,7 @@ class Methods:
 
         @app.get(self.path + f"/auth/")
         async def auth(request: Request) -> JSONResponse:
-            return JSONResponse({"avaliable_methods": ["register", "login"]})
+            return JSONResponse({"avaliable_methods": ["register", "login", "confirmEmail", "resetToken", "getMe"]})
 
         @app.post(self.path + f"/auth/register")
         async def register(request: Request, account: Account, type: Literal['default', 'google', 'github'] = 'default') -> JSONResponse:
@@ -34,28 +33,20 @@ class Methods:
             
             if 'x-real-ip' not in headers:
                 errors.append('X-Real-Ip header not found')
-            
             if account.username and len(account.username) < 3:
                 errors.append('Username must be at least 3 characters long')
-                
             if account.username and await User.get(username=account.username):
                 errors.append('Username already exists')
-            
             if account.username is None and account.email is None:
                 errors.append('Either username or email must be provided')
-            
             if account.email and await User.get(email=account.email):
                 errors.append('Email already used')
-            
             if account.email and not match(r"[^@]+@[^@]+\.[^@]+", account.email):
                 errors.append('Invalid email address')
-            
             if len(account.password) < 8:
                 errors.append('Password must be at least 8 characters long')
-            
             if account.password == account.password.lower() or account.password == account.password.upper():
                 errors.append('Password must contain at least one uppercase letter and one lowercase letter')
-                
             if not any(char.isdigit() for char in account.password):
                 errors.append('Password must contain at least one number')
             
@@ -65,26 +56,29 @@ class Methods:
                             
             if len(errors) == 0:
                 try:
-                    email_confirm_key = "".join(choice(ascii_letters + digits) for _ in range(24))
+                    email_confirm_key = "".join(choice(ascii_letters + digits) for _ in range(82))
+                    email_confirm_url = f"{app.api_url}/account/auth/confirmEmail?key={email_confirm_key}"
                     user = await User.add(
                         username=account.username,
                         email=account.email,
                         password=account.password,
                         reg_ip=headers['x-real-ip'],
                         reg_type=type if type != 'default' else None,
-                        email_confirm_key=email_confirm_key
+                        email_confirm_key=email_confirm_key,
+                        last_ip=headers['x-real-ip'],
+                        ip_history=[headers['x-real-ip']]
                     )
                     app.logger.info(f'User {user.user_id} created | ip: {headers["x-real-ip"]}')
                     if account.email:
-                        Email().send(email=account.email, subject='Your registration code', preset='confirm-email', user=user.user_id, key_url=email_confirm_key, ip=headers["x-real-ip"])
+                        app.email.send(email=account.email, subject='Your registration code', preset='confirm-email', user=user.user_id, key_url=email_confirm_url, ip=headers["x-real-ip"])
                     return JSONResponse(
                         {"message": "User created successfully", "user_id": user.user_id, "token": await User.generate_token(user.user_id)},
                         status_code=201, headers=app.no_cache_headers)
                 except UserAlreadyExists:
                     errors.append('User already exists')
-                # except Exception as e:
-                #     app.logger.error(e)
-                #     errors.append('An error occurred...')
+                except Exception as e:
+                    app.logger.error(e)
+                    errors.append('An error occurred...')
             return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
         
         @app.post(self.path + f"/auth/login")
@@ -94,22 +88,22 @@ class Methods:
             
             if 'x-real-ip' not in headers:
                 errors.append('X-Real-Ip header not found')
-            
             if account.email is None and account.username is None:
                 errors.append('Either username or email must be provided')
-                
             user = await User.get(username=account.username) if account.username else await User.get(email=account.email)
             if user is None or not await User.compare_password(user.user_id, account.password):
                 errors.append('User or password is incorrect')
-            
             if len(errors) > 0:
                 return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
-                 
             if user.last_ip != headers['x-real-ip']:
                 user.ip_history = user.ip_history + [headers['x-real-ip']] if user.ip_history else [headers['x-real-ip']]
             await User.update(user.user_id, active_at=datetime.utcnow(), last_ip=headers['x-real-ip'], ip_history=user.ip_history)
-                 
-            return JSONResponse({"message": "User logged in successfully", "user_id": user.user_id, "token": user.token if user.token else await User.generate_token(user.user_id)}, status_code=201, headers=app.no_cache_headers)
+                  
+            return JSONResponse({
+                    "message": "User logged in successfully",
+                    "user_id": user.user_id,
+                    "token": user.token if user.token else await User.generate_token(user.user_id)
+                }, status_code=201, headers=app.no_cache_headers)
 
         @app.post(self.path + f"/auth/resetToken")
         async def resetToken(request: Request, account: Account) -> JSONResponse:
@@ -123,8 +117,7 @@ class Methods:
                 errors.append('Username or password not found')
             else:
                 if await User.compare_password(user.user_id, account.password):
-                    return JSONResponse(
-                        {
+                    return JSONResponse({
                             "message": "Token reset successful", 
                             "user_id": user.user_id,
                             "token": await User.generate_token(user.user_id)
@@ -135,6 +128,14 @@ class Methods:
             
             if len(errors) > 0:
                 return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
+
+        @app.get(self.path + f'/auth/confirmEmail')
+        async def confirmEmail(request: Request, key: str) -> JSONResponse:
+            user = await User.get(email_confirm_key=key)
+            if user:
+                await User.update(user.user_id, email_confirmed_at=datetime.utcnow(), email_confirm_key=None)
+                return JSONResponse({'message': 'Email confirmed successfully'}, status_code=200, headers=app.no_cache_headers)
+            return JSONResponse({'message': 'Email confirmation failed'}, status_code=400, headers=app.no_cache_headers)
 
         @app.get(self.path + f"/auth/getMe")
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
@@ -147,11 +148,11 @@ class Methods:
             if len(errors) > 0:
                 return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
             
-            return JSONResponse( 
-                {
+            return JSONResponse({
                     "user_id": user.user_id, "username": user.username, "email": user.email,
                     "sessions": user.sessions, "language": user.language, "theme": user.theme,
                     "closed_interactions": user.closed_interactions,
-                    "favorites_list_id": (await ItemList.get(author_id=user.user_id, kind='favorites')).list_id
+                    "favorites_list_id": (await ItemList.get(author_id=user.user_id, kind='favorites')).list_id,
+                    "email_confirmed": True if user.email_confirmed_at else False
                 }, status_code=200, headers=app.no_cache_headers
             )

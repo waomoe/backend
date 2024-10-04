@@ -14,6 +14,8 @@ from dotenv import load_dotenv, find_dotenv
 from threading import Thread
 from time import sleep
 from loguru import logger
+from random import choice
+from string import ascii_letters, digits
 from .exceptions import *
 
 
@@ -257,10 +259,10 @@ class User(Base):
         if user is None:
             raise UserNotFound(f'User with id {user_id} wasn\'t found')
         
-        kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=os.urandom(16), iterations=390000)
+        kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=os.urandom(16), iterations=696969)
         password = (str(uuid4()).encode('utf-8'))
         f = Fernet(base64.urlsafe_b64encode(kdf.derive(password)))
-        encMessage = f.encrypt(f'{user.user_id}'.encode('utf-8'))
+        encMessage = f.encrypt((f"{user.user_id}" + "".join(choice(ascii_letters + digits) for _ in range(63))).encode('utf-8')[:64][::-1])
         
         if await cls.get(token=encMessage.decode('utf-8')):
             return await cls.generate_token(user_id)
