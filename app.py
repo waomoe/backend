@@ -11,6 +11,7 @@ from pprint import pformat
 from loguru._defaults import LOGURU_FORMAT
 from glob import glob
 from os.path import dirname, basename, isfile, join
+from asyncio import create_task
 import logging
 import sys
 
@@ -28,7 +29,6 @@ app.email = Email()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.logger = logger 
-app.logger.add("./logs/{time:YYYY}-{time:MM}-{time:DD}.log", rotation="00:00", level="DEBUG")
 
 app.add_middleware(
     CORSMiddleware,
@@ -94,6 +94,7 @@ __all__ = [basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__
 for module in __all__:
     module = __import__(f'core.methods.{module}', globals(), locals(), ['Methods'], 0)  
     module.Methods(app)
-    app.logger.info(f'Loaded {module.__name__} methods')
+    app.logger.info(f'Loaded {module.__name__} methods')    
     
+app.setup_hook = create_task(setup_hook())
 app.logger.success(f'Started wao.moe backend v{app.current_version} in {datetime.now() - app.start_at}')
