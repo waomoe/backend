@@ -2,9 +2,13 @@
 
 host=localhost 
 port=8741
-# if arg dev is provided
+additional=
 if [ "$1" = "dev" ]; then
 port=7741
+additional=--reload
+fi
+if [ "$1" = "screen" ]; then
+sceren -S waomoe-backend
 fi
 
 SCRIPT=$(readlink -f "$0")
@@ -15,4 +19,4 @@ $python_executable -m venv $SCRIPTPATH/.venv
 source .venv/bin/activate
 $python_executable -m pip install --upgrade pip
 $python_executable -m pip install -r requirements.txt
-$python_executable -m uvicorn app:app --host $host --port $port
+$python_executable -m uvicorn app:app --host $host --port $port $additional

@@ -11,7 +11,8 @@ class UserNotInitialized(Exception):
 class UserNotFound(Exception):
     def __init__(self, message):
         self.message = message
-    
+        
+
 
 class PostNotInitialized(Exception):
     def __init__(self, message):
@@ -39,5 +40,10 @@ class ItemNotInitialized(Exception):
         
         
 class ItemNotFound(Exception):
+    def __init__(self, message):
+        self.message = message
+        
+        
+class BlacklistedValue(Exception):
     def __init__(self, message):
         self.message = message

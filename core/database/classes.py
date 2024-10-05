@@ -14,7 +14,7 @@ from dotenv import load_dotenv, find_dotenv
 from threading import Thread
 from time import sleep
 from loguru import logger
-from random import choice
+from random import choice, shuffle
 from string import ascii_letters, digits
 from .exceptions import *
 
@@ -28,7 +28,7 @@ class PerfomanceMeter:
     all = [0]
 
     def report(self):
-        sleep(300)
+        sleep(300)  
         logger.info(f'Total database actions performed since start: {len(self.all)}')
         logger.info(f'Average time per action: {sum(self.all) / len(self.all)}s')
         logger.info(f'Average time per action (last 1k): {sum(self.all[-1000:]) / len(self.all[-1000:])}s')
@@ -51,12 +51,10 @@ class User(Base):
         
     user_id = Column(Integer, primary_key=True, unique=True)
     email = Column(String, default=None, unique=True)
-    email_confirm_key = Column(String, default=None)
     password = Column(String, default=None)
     two_factor = Column(String, default=None)
     username = Column(String, default=None, unique=True)
     name = Column(String, default=None)
-    banned = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
     token = Column(String, default=None, unique=True)
     oauth = Column(JSON, default=None)
@@ -64,23 +62,39 @@ class User(Base):
     
     avatar_url = Column(String, default=None)
     banner_url = Column(String, default=None)
+    website_url = Column(String, default=None)
+    bio = Column(String, default=None)
+    location = Column(String, default=None)
+    about = Column(String, default=None)
+    birthday = Column(DateTime(timezone=True), default=None)
+    gender = Column(String, default=None)
+    social = Column(JSON, default=None)
       
     created_at = Column(DateTime(timezone=True), default=func.now())
-    email_confirmed_at = Column(DateTime(timezone=True), default=None)
     active_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     
+    banned_until = Column(DateTime(timezone=True), default=None)
+    muted_until = Column(DateTime(timezone=True), default=None)
+    mod_logs = Column(JSON, default=None)
+    
+    email_confirm_key = Column(String, default=None)
+    email_confirmed_at = Column(DateTime(timezone=True), default=None)
+    
     language = Column(String, default='en')
     theme = Column(String, default=None)
+    privacy = Column(String, default=None)
+    settings = Column(String, default=None)
+    
     group = Column(String, default=None)
+    paid_subscriptions = Column(JSON, default=None)
     
     closed_interactions = Column(JSON, default=None)    
 
     following = Column(JSON, default=None)
+    followers = Column(JSON, default=None)
     subscribed = Column(JSON, default=None)
-    
-    scores = Column(JSON, default=None)
-    
+    subscribers = Column(JSON, default=None)
     blocked_users = Column(JSON, default=None)
 
     sessions = Column(JSON, default=None)
@@ -186,7 +200,7 @@ class User(Base):
         return users
 
     @classmethod
-    async def update(cls, user_id: int = None, **kwargs) -> Self:
+    async def update(cls, user_id: int = None, bypass_blacklist: bool = False, **kwargs) -> Self:
         """
         Update existing user in database.
 
@@ -218,13 +232,20 @@ class User(Base):
         user = session.query(User).filter_by(user_id=user_id).first()
         if user is None:
             raise UserNotFound(f'User with id {user_id} wasn\'t found')
-        if 'username' in kwargs and await cls.get(username=kwargs['username']) is not None:
+        if 'username' in kwargs and await cls.get(username=kwargs['username']) is not None and kwargs['username'] != user.username:
             raise UserAlreadyExists(f'User with username {kwargs["username"]} already exists')
         if 'email' in kwargs and await cls.get(email=kwargs['email']) is not None:
             raise UserAlreadyExists(f'User with email {kwargs["email"]} already exists')
         if 'password' in kwargs:
             load_dotenv()
             kwargs['password'] = Fernet(getenv('SECRET_KEY').encode('utf-8')).encrypt(user.password.encode('utf-8')).decode('utf-8')
+        for key, value in kwargs.items():
+            try:
+                blacklist = [x.upper() for x in open(__file__[:__file__.rfind('/')] + f'/blacklists/{key}.txt', 'r').read().splitlines()]
+                if str(value).upper() in blacklist and bypass_blacklist is False:
+                    raise BlacklistedValue(f'Value {value} for key {key} is blacklisted to set')
+            except Exception as exc:
+                pass
             
         for key, value in kwargs.items():
             setattr(user, key, value)
@@ -262,14 +283,18 @@ class User(Base):
         kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=os.urandom(16), iterations=696969)
         password = (str(uuid4()).encode('utf-8'))
         f = Fernet(base64.urlsafe_b64encode(kdf.derive(password)))
-        encMessage = f.encrypt((f"{user.user_id}" + "".join(choice(ascii_letters + digits) for _ in range(63))).encode('utf-8')[:64][::-1])
+        encMessage = f.encrypt((f"{user.user_id}" + "".join(choice(ascii_letters + digits) for _ in range(94))).encode('utf-8')[:64][::-1])
         
-        if await cls.get(token=encMessage.decode('utf-8')):
+        token = list(encMessage.decode('utf-8'))
+        shuffle(token)
+        token = ('W-' + ''.join(token))[:96]
+        
+        if await cls.get(token=token):
             return await cls.generate_token(user_id)
         
-        await cls.update(user_id=user.user_id, token=encMessage.decode('utf-8'))
+        await cls.update(user_id=user.user_id, token=token)
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return encMessage.decode('utf-8')
+        return token
 
     @classmethod
     async def validate_token(cls, token: str) -> Self | None:
@@ -306,9 +331,10 @@ class Post(Base):
     edit_at = Column(DateTime(timezone=True), server_default=None)
     update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    upvotes = Column(JSON, default=[])
-    downvotes = Column(JSON, default=[])
-    reactions = Column(JSON, default=[])
+    upvotes = Column(JSON, default=None)
+    downvotes = Column(JSON, default=None)
+    reactions = Column(JSON, default=None)
+    views = Column(JSON, default=None)
 
     @classmethod
     async def add(cls, **kwargs) -> Self:

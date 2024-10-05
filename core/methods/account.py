@@ -18,9 +18,29 @@ class Methods:
             username: str | None = None
             password: str
 
+        class EditAccount(BaseModel):
+            username: str | None = None
+            name: str | None = None
+            avatar_url: str | None = None
+            banner_url: str | None = None
+            website_url: str | None = None
+            bio: str | None = None
+            location: str | None = None
+            about: str | None = None
+            birthday: str | None = None
+            gender: str | None = None
+            social: str | None = None
+            privacy: int | None = None
+            
+        class EditAccountAuth(BaseModel):
+            password: str | None = None
+            two_factor: bool | None = None
+            email: str | None = None
+            api_tokens: str | None = None
+
         @app.get(self.path + '/')
         async def root(request: Request) -> JSONResponse:
-            return JSONResponse({"avaliable_methods": ["auth"]})
+            return JSONResponse({"avaliable_methods": ["auth", "edit"]})
 
         @app.get(self.path + f"/auth/")
         async def auth(request: Request) -> JSONResponse:
@@ -156,3 +176,37 @@ class Methods:
                     "email_confirmed": True if user.email_confirmed_at else False
                 }, status_code=200, headers=app.no_cache_headers
             )
+        
+        @app.get(self.path + f"/edit/")
+        async def auth(request: Request) -> JSONResponse:
+            return JSONResponse({"avaliable_methods": ["editMe", "editAuth"]})
+        
+        @app.post(self.path + f"/edit/editMe")
+        async def editMe(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccount) -> JSONResponse:
+            errors = []
+            
+            user = await User.get(token=x_authorization)
+            if user is None:
+                errors.append('Token is invalid')
+                
+            if len(errors) == 0:
+                try:
+                    await User.update(user.user_id, **edit.model_dump(exclude_unset=True))
+                    return JSONResponse({"message": "Updated successfully"}, status_code=201, headers=app.no_cache_headers)
+                except BlacklistedValue as exc:
+                    errors.append(str(exc))
+            return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
+                        
+        @app.post(self.path + f"/auth/editAuth")
+        async def editAuth(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccountAuth) -> JSONResponse:
+            errors = []
+            user = await User.get(token=x_authorization)
+            if user is None:
+                errors.append('Token is invalid')
+            
+            if len(errors) == 0:
+                for key, value in edit.model_dump(exclude_unset=True).items():
+                    print(key, value)
+                
+            return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
+            
