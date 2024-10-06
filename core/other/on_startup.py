@@ -8,3 +8,4 @@ async def setup_hook(*args, **kwargs) -> None:
         print('Creating bot account...')
         root = await User.add(username='bot', password=''.join(choice(ascii_letters + digits) for _ in range(32)), group='bot')
         await User.generate_token(root.user_id)
+        

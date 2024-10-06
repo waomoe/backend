@@ -23,6 +23,7 @@ from .exceptions import *
 
 
 engine = create_async_engine('sqlite+aiosqlite:///./waomoe.sqlite')
+async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
 
 
@@ -31,19 +32,19 @@ class PerfomanceMeter:
     all = [0]
 
     def report(self):
-        sleep(300)  
-        logger.info(f'Total database actions performed since start: {len(self.all)}')
-        logger.info(f'Average time per action: {sum(self.all) / len(self.all)}s')
-        logger.info(f'Average time per action (last 1k): {sum(self.all[-1000:]) / len(self.all[-1000:])}s')
-        logger.info(f'Average time per action (last 100): {sum(self.all[-100:]) / len(self.all[-100:])}s')
+        while True:
+            sleep(300)
+            if len(self.all) > 100000:
+                self.all = self.all[-100000:]
+            logger.info(f'Database delay report')
+
+            logger.info(f'Average time per action: {sum(self.all) / len(self.all)}s')
+            logger.info(f'Average time per action (last 1k): {sum(self.all[-1000:]) / len(self.all[-1000:])}s')
+            logger.info(f'Average time per action (last 100): {sum(self.all[-100:]) / len(self.all[-100:])}s')
+
 
 perfomance = PerfomanceMeter()
 Thread(target=perfomance.report).start()
-
-
-async_session = sessionmaker(
-    engine, expire_on_commit=False, class_=AsyncSession
-)
 
 
 class User(Base):

@@ -4,5 +4,6 @@ __pychache__
 *test*.*
 .env
 *.sqlite
+*.sqlite-journal
 .gitignore
 logs/
