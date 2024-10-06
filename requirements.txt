@@ -3,7 +3,8 @@ fastapi
 slowapi
 pyjwt
 cffi
-sqlalchemy
+sqlalchemy[asyncio]
+aiosqlite
 python-dotenv
 aiohttp
 loguru

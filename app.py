@@ -19,7 +19,7 @@ import sys
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(docs_url='/docs')
 
-app.current_version = '1.0.0-dev'
+app.current_version = '1.0.1-dev'
 app.start_at = datetime.now()
 app.url = 'https://wao.moe'
 app.api_url = 'https://dev-api.wao.moe' if 'dev' in app.current_version else 'https://api.wao.moe'

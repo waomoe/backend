@@ -1,6 +1,8 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float, JSON, DateTime, func, BINARY
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float, JSON, DateTime, func, BINARY, Identity
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.future import select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from datetime import datetime, timezone
 from typing import Self, List
 from uuid import uuid4
@@ -16,10 +18,11 @@ from time import sleep
 from loguru import logger
 from random import choice, shuffle
 from string import ascii_letters, digits
+from asyncio import create_task
 from .exceptions import *
 
 
-engine = create_engine('sqlite:///./waomoe.sqlite?check_same_thread=False')
+engine = create_async_engine('sqlite+aiosqlite:///./waomoe.sqlite')
 Base = declarative_base()
 
 
@@ -38,18 +41,15 @@ perfomance = PerfomanceMeter()
 Thread(target=perfomance.report).start()
 
 
-class Session(sessionmaker):
-    def __new__(cls):
-        """Session generator for database operations. Should be closed with `.close()` after usage"""
-        return (sessionmaker(bind=engine))()
+async_session = sessionmaker(
+    engine, expire_on_commit=False, class_=AsyncSession
+)
 
 
 class User(Base):
     __tablename__: str = 'users'
         
-    initialized = False
-        
-    user_id = Column(Integer, primary_key=True, unique=True)
+    user_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     email = Column(String, default=None, unique=True)
     password = Column(String, default=None)
     two_factor = Column(String, default=None)
@@ -103,7 +103,10 @@ class User(Base):
     last_ip = Column(String, default=None)
     ip_history = Column(JSON, default=None)
     
+    initialized = False
+    
     def __init__(self, **kwargs):
+        
         self.initialized = True
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -128,30 +131,25 @@ class User(Base):
         UserAlreadyExists
             If user with given id, email or username already exists.
         """
-        start_at = datetime.now()
-        session = Session()
-        if 'user_id' not in kwargs:
-            kwargs['user_id'] = len(await cls.get_all()) + 1
-        user = User(
-            **kwargs
-        )
-        if session.query(User).filter_by(user_id=user.user_id).first():
-            raise UserAlreadyExists(f'User with id {user.user_id} already exists')
-        if session.query(User).filter_by(username=user.username).first() and user.username:
-            raise UserAlreadyExists(f'User with username @{user.username} already exists')
-        if session.query(User).filter_by(email=user.email).first() and user.email:
-            raise UserAlreadyExists(f'User with email {user.email} already exists')
-        session.add(user)
-        session.commit()
-        if user.password:
-            await cls.update(user_id=user.user_id, password=user.password)
-        session.close()
+        start_at = datetime.now()   
+        async with async_session() as session:
+            user = User(
+                **kwargs
+            )
+            if user.username and await cls.get(username=user.username):
+                raise UserAlreadyExists(f'User with username @{user.username} already exists')
+            if user.email and await cls.get(email=user.email):
+                raise UserAlreadyExists(f'User with email {user.email} already exists')
+            session.add(user)
+            await session.commit()
+            if user.password:
+                await cls.update(user_id=user.user_id, password=user.password)
 
-        if not await ItemList.get(author_id=kwargs['user_id'], kind='favorites'):
-            await ItemList.add(author_id=kwargs['user_id'], kind='favorites', name='Favorites')
-        
+            if not await ItemList.get(author_id=user.user_id, kind='favorites'):
+                await ItemList.add(author_id=user.user_id, kind='favorites', name='Favorites')
+            
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(user_id=kwargs['user_id'])
+        return await cls.get(user_id=user.user_id)
 
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
@@ -169,20 +167,22 @@ class User(Base):
             User object if found, None if not.
         """
         start_at = datetime.now()
-        session = Session()
-        user = session.query(User).filter_by(**kwargs).first()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            user = (await session.execute(select(User).filter_by(**kwargs))).scalar_one_or_none()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return user
 
     @classmethod
-    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
+    async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self] | List[None] | None:
         """
         Get all users by given criteria. If no criteria is given, returns all users.
 
         Parameters
         ----------
+        limit : int
+            Limit of users to return. If not provided, returns all users.
+        offset : int
+            Offset of users to return. Defaults to 0.
         **kwargs
             Criteria to search users by. For example, user_id=123 or username='admin'.
 
@@ -192,10 +192,11 @@ class User(Base):
             List of User objects if found, empty list if not or None if criteria is not valid.
         """
         start_at = datetime.now()
-        session = Session()
-        users = session.query(User).filter_by(**kwargs).all()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            if limit is not None:
+                users = (await session.execute(select(User).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
+            else:
+                users = (await session.execute(select(User).filter_by(**kwargs))).scalars().all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return users
 
@@ -226,37 +227,37 @@ class User(Base):
             If user with given username or email already exists.
         """
         start_at = datetime.now()
-        session = Session()
-        if user_id is None and cls.initialized is False:
-            raise UserNotInitialized(f'User was not initialized and user_id was not provided')
-        user = session.query(User).filter_by(user_id=user_id).first()
-        if user is None:
-            raise UserNotFound(f'User with id {user_id} wasn\'t found')
-        if 'username' in kwargs and await cls.get(username=kwargs['username']) is not None and kwargs['username'] != user.username:
-            raise UserAlreadyExists(f'User with username {kwargs["username"]} already exists')
-        if 'email' in kwargs and await cls.get(email=kwargs['email']) is not None:
-            raise UserAlreadyExists(f'User with email {kwargs["email"]} already exists')
-        if 'password' in kwargs:
-            load_dotenv()
-            kwargs['password'] = Fernet(getenv('SECRET_KEY').encode('utf-8')).encrypt(user.password.encode('utf-8')).decode('utf-8')
-        for key, value in kwargs.items():
-            try:
-                blacklist = [x.upper() for x in open(__file__[:__file__.rfind('/')] + f'/blacklists/{key}.txt', 'r').read().splitlines()]
-                if str(value).upper() in blacklist and bypass_blacklist is False:
-                    raise BlacklistedValue(f'Value {value} for key {key} is blacklisted to set')
-            except Exception as exc:
-                pass
-            
-        for key, value in kwargs.items():
-            setattr(user, key, value)
-        session.commit()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            if user_id is None and cls.user_id is None:
+                raise UserNotInitialized(f'User was not initialized and user_id was not provided')
+            if user_id is None:
+                user_id = cls.user_id
+            user = (await session.execute(select(User).filter_by(user_id=user_id))).scalar_one_or_none()
+            if user is None:
+                raise UserNotFound(f'User with id {user_id} wasn\'t found')
+            if 'username' in kwargs and await cls.get(username=kwargs['username']) is not None and kwargs['username'] != user.username:
+                raise UserAlreadyExists(f'User with username {kwargs["username"]} already exists')
+            if 'email' in kwargs and await cls.get(email=kwargs['email']) is not None:
+                raise UserAlreadyExists(f'User with email {kwargs["email"]} already exists')
+            if 'password' in kwargs:
+                load_dotenv()
+                kwargs['password'] = Fernet(getenv('SECRET_KEY').encode('utf-8')).encrypt(user.password.encode('utf-8')).decode('utf-8')
+            for key, value in kwargs.items():
+                try:
+                    blacklist = [x.upper() for x in open(__file__[:__file__.rfind('/')] + f'/blacklists/{key}.txt', 'r').read().splitlines()]
+                    if str(value).upper() in blacklist and bypass_blacklist is False:
+                        raise BlacklistedValue(f'Value {value} for key {key} is blacklisted to set')
+                except Exception as exc:
+                    pass
+                
+            for key, value in kwargs.items():
+                setattr(user, key, value)
+            await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(user_id=user_id)
 
     @classmethod
-    async def generate_token(cls, user_id: int) -> str:
+    async def generate_token(cls, user_id: int = None) -> str:
         """
         Generates a unique token for a given user.
 
@@ -276,6 +277,7 @@ class User(Base):
             If the user with the given ID does not exist.
         """
         start_at = datetime.now()
+        user_id = user_id if user_id is not None else cls.user_id
         user = await cls.get(user_id=user_id)
         if user is None:
             raise UserNotFound(f'User with id {user_id} wasn\'t found')
@@ -292,14 +294,9 @@ class User(Base):
         if await cls.get(token=token):
             return await cls.generate_token(user_id)
         
-        await cls.update(user_id=user.user_id, token=token)
+        await cls.update(user_id=user_id, token=token)
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return token
-
-    @classmethod
-    async def validate_token(cls, token: str) -> Self | None:
-         user = await cls.get(token=token) 
-         return user
      
     @classmethod
     async def compare_password(cls, user_id: int, password: str):
@@ -311,13 +308,13 @@ class User(Base):
         return Fernet(getenv('SECRET_KEY').encode('utf-8')).decrypt(user.password).decode('utf-8') == password
 
     def __repr__(self) -> str:
-        return f'<User @{self.username} [{self.user_id}]>'
+        return f'<User #{self.user_id} ({", ".join([str(self.name), str(self.username), str(self.email)])})>'
 
 
 class Post(Base):
     __tablename__ = 'posts'
     
-    post_id = Column(Integer, primary_key=True, unique=True)
+    post_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     parent_id = Column(Integer, default=None)
     author_id = Column(Integer, default=None)
     deleted = Column(Boolean, default=False)
@@ -339,51 +336,47 @@ class Post(Base):
     @classmethod
     async def add(cls, **kwargs) -> Self:
         start_at = datetime.now()
-        session = Session()
-        if 'post_id' not in kwargs:
-            kwargs['post_id'] = len(await cls.get_all()) + 1
-        post = Post(**kwargs)
-        session.add(post)
-        session.commit()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            post = Post(**kwargs)
+            session.add(post)
+            await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(post_id=post.post_id)
     
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
         start_at = datetime.now()
-        session = Session()
-        post = session.query(Post).filter_by(**kwargs).first()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            post = (await session.execute(select(Post).filter_by(**kwargs))).scalars().first()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return post
-    
+        
     @classmethod
-    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
+    async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self] | List[None] | None:
         start_at = datetime.now()
-        session = Session()
-        posts = session.query(Post).filter_by(**kwargs).all()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            if limit is not None:
+                posts = session.query(Post).filter_by(**kwargs).limit(limit).offset(offset).all()
+            else:
+                posts = session.query(Post).filter_by(**kwargs).all()
+            session.expunge_all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return posts
-    
+        
     @classmethod
     async def update(cls, post_id: int = None, **kwargs) -> Self:
         start_at = datetime.now()
-        session = Session()
-        if post_id is None and cls.initialized is False:
-            raise PostNotInitialized(f'Post was not initialized and post_id was not provided')
-        post = session.query(Post).filter_by(post_id=post_id).first()
-        if post is None:
-            raise PostNotFound(f'Post with id {post_id} wasn\'t found')
-        for key, value in kwargs.items():
-            setattr(post, key, value)
-        session.commit()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            if post_id is None:
+                post_id = cls.post_id
+            post = session.query(Post).filter_by(post_id=post_id).first()
+            if post is None:
+                raise PostNotFound(f'Post with id {post_id} wasn\'t found')
+            for key, value in kwargs.items():
+                setattr(post, key, value)
+            session.commit()
+            session.expunge_all()
+            session.close()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(post_id=post.post_id)
 
@@ -394,7 +387,7 @@ class Post(Base):
 class ItemList(Base):
     __tablename__ = 'lists'
     
-    list_id = Column(Integer, primary_key=True, unique=True)
+    list_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     parent_id = Column(Integer, default=None)
     author_id = Column(Integer, default=None)
     deleted = Column(Boolean, default=False)
@@ -416,51 +409,44 @@ class ItemList(Base):
     @classmethod
     async def add(cls, **kwargs) -> Self:
         start_at = datetime.now()
-        session = Session()
-        if 'list_id' not in kwargs:
-            kwargs['list_id'] = len(await cls.get_all()) + 1
-        list = ItemList(**kwargs)
-        session.add(list)
-        session.commit()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            list = ItemList(**kwargs)
+            session.add(list)
+            await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(list_id=kwargs['list_id'])
+        return await cls.get(list_id=list.list_id)
     
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
         start_at = datetime.now()
-        session = Session()
-        list = session.query(ItemList).filter_by(**kwargs).first()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            list = (await session.execute(select(ItemList).filter_by(**kwargs))).scalars().first()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return list
     
     @classmethod
-    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
+    async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self] | List[None] | None:
         start_at = datetime.now()
-        session = Session()
-        lists = session.query(ItemList).filter_by(**kwargs).all()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            if limit is not None:
+                lists = (await session.execute(select(ItemList).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
+            else:
+                lists = (await session.execute(select(ItemList).filter_by(**kwargs))).scalars().all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return lists
     
     @classmethod
     async def update(cls, list_id: int = None, **kwargs) -> Self:
         start_at = datetime.now()
-        session = Session()
-        if list_id is None and cls.initialized is False:
-            raise ListNotInitialized(f'List was not initialized and list_id was not provided')
-        list = session.query(ItemList).filter_by(list_id=list_id).first()
-        if list is None:
-            raise ListNotFound(f'List with id {list_id} wasn\'t found')
-        for key, value in kwargs.items():
-            setattr(list, key, value)
-        session.commit()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            if list_id is None:
+                list_id = cls.list_id
+            list = session.query(ItemList).filter_by(list_id=list_id).first()
+            if list is None:
+                raise ListNotFound(f'List with id {list_id} wasn\'t found')
+            for key, value in kwargs.items():
+                setattr(list, key, value)
+            await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(list_id=list.list_id)
 
@@ -468,7 +454,7 @@ class ItemList(Base):
 class Item(Base):
     __tablename__ = 'items'
     
-    item_id = Column(Integer, primary_key=True, unique=True)
+    item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     
     parent_id = Column(Integer, default=None)
     author_id = Column(Integer, default=None)
@@ -493,53 +479,51 @@ class Item(Base):
     @classmethod
     async def add(cls, **kwargs) -> Self:
         start_at = datetime.now()
-        session = Session()
-        if 'item_id' not in kwargs:
-            kwargs['item_id'] = len(await cls.get_all()) + 1
-        item = Item(**kwargs)
-        session.add(item)
-        session.commit()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            item = Item(**kwargs)
+            session.add(item)
+            await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(item_id=kwargs['item_id'])
     
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
         start_at = datetime.now()
-        session = Session()
-        item = session.query(Item).filter_by(**kwargs).first()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            item = (await session.execute(select(Item).filter_by(**kwargs))).scalars().first()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return item
-    
+        
     @classmethod
-    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
+    async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self] | List[None] | None:
         start_at = datetime.now()
-        session = Session()
-        items = session.query(Item).filter_by(**kwargs).all()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            if limit is not None:
+                items = (await session.execute(select(Item).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
+            else:
+                items = (await session.execute(select(Item).filter_by(**kwargs))).scalars().all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return items
     
     @classmethod
     async def update(cls, item_id: int = None, **kwargs) -> Self:
         start_at = datetime.now()
-        session = Session()
-        if item_id is None and cls.initialized is False:
-            raise ItemNotInitialized(f'Item was not initialized and item_id was not provided')
-        item = session.query(Item).filter_by(item_id=item_id).first()
-        if item is None:
-            raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
-        for key, value in kwargs.items():
-            setattr(item, key, value)
-        session.commit()
-        session.expunge_all()
-        session.close()
+        async with async_session() as session:
+            if item_id is None:
+                item_id = cls.item_id
+            item = session.query(Item).filter_by(item_id=item_id).first()
+            if item is None:
+                raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
+            for key, value in kwargs.items():
+                setattr(item, key, value)
+            await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(item_id=item.item_id)
 
 
-Base.metadata.create_all(engine)
+async def create_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+create_task(create_tables())

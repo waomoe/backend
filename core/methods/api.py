@@ -20,15 +20,29 @@ class Methods:
             )
         
         @app.get(self.path + '/database')
-        async def database(request: Request) -> JSONResponse:
-            await User.get()
+        async def database(request: Request) -> JSONResponse:     
+            print(await User.get_all(limit=10, offset=100))     
             return JSONResponse(
                 {
                     'status': 'ok' if sum(perfomance.all[-100:]) / len(perfomance.all[-100:]) < 0.09 else 'slow',
-                    "average_action_time": sum(perfomance.all) / len(perfomance.all),
-                    "average_action_time_last_1000": sum(perfomance.all[-1000:]) / len(perfomance.all[-1000:]),
-                    "average_action_time_last_100": sum(perfomance.all[-100:]) / len(perfomance.all[-100:])
+                    "delays_avg": {
+                        "all_time": sum(perfomance.all) / len(perfomance.all),
+                        "last_1": sum(perfomance.all[-1:]) / len(perfomance.all[-1:]),
+                        "last_10": sum(perfomance.all[-10:]) / len(perfomance.all[-10:]),
+                        "last_100": sum(perfomance.all[-100:]) / len(perfomance.all[-100:]),
+                        "last_1000": sum(perfomance.all[-1000:]) / len(perfomance.all[-1000:]),
+                        "last_10000": sum(perfomance.all[-10000:]) / len(perfomance.all[-10000:])
+                    },
                 }, headers=app.no_cache_headers)
+        
+        @app.get(self.path + '/test', include_in_schema=False)
+        async def test(request: Request) -> JSONResponse:
+            from random import choice
+            from string import ascii_letters, digits
+            for i in range(2500):
+                user = await User.add(name=f'User {i}', password=''.join(choice(ascii_letters + digits) for _ in range(32)))
+                await user.generate_token(user.user_id)
+            return JSONResponse({'status': 'ok'})
         
         @app.get(self.path + '/version')
         async def version(request: Request) -> PlainTextResponse:
