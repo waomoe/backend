@@ -1,0 +1,9 @@
+.venv
+*.pyc
+__pychache__
+*test*.*
+.env
+*.sqlite
+*.sqlite-journal
+.gitignore
+logs/
