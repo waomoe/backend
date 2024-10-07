@@ -8,7 +8,7 @@ class ShikimoriAPI:
         self.base_url = 'https://shikimori.one'
 
     async def get(self, path: str, **kwargs) -> dict:
-        if self.session is None:
+        if self.session is None or self.session.closed:
             self.session = ClientSession()
         async with self.session.get(self.base_url + path, **kwargs) as response:
             try:
@@ -19,5 +19,6 @@ class ShikimoriAPI:
         return response
         
     async def autocomplete(self, search: str, return_url: bool = False, **kwargs) -> dict:
-        return self.base_url + f'/api/animes' if return_url else await self.get('/api/animes', params={'search': search, 'limit': 10, **kwargs})
-    
+        animes = self.base_url + f'/api/animes' if return_url else await self.get('/api/animes', params={'search': search, 'limit': 10, **kwargs})
+        mangas = self.base_url + f'/api/mangas' if return_url else await self.get('/api/mangas', params={'search': search, 'limit': 10, **kwargs})
+        return {'animes': animes, 'mangas': mangas}

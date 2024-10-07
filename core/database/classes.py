@@ -23,7 +23,7 @@ from os.path import dirname
 from .exceptions import *
 
 
-db_backup_folder = f'{dirname(__file__)}/backups/'
+db_backup_folder = f'./backups/'
 engine = create_async_engine('sqlite+aiosqlite:///./waomoe.sqlite')
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
@@ -47,6 +47,21 @@ class PerfomanceMeter:
 
 perfomance = PerfomanceMeter()
 Thread(target=perfomance.report).start()
+
+
+async def backup_db():
+    load_dotenv()
+    CRYPT_KEY = getenv('DB_CRYPT_KEY')
+    if not os.path.exists(db_backup_folder):
+        os.mkdir(db_backup_folder)
+    files = os.listdir(db_backup_folder)
+    if len(files) > 6:
+        files.sort()
+        for f in files[:-6]:
+            os.remove(db_backup_folder + f)
+    with open('./waomoe.sqlite', 'rb') as f:
+        with open(db_backup_folder + f'crypted_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt', 'wb') as f2:
+            f2.write(Fernet(CRYPT_KEY.encode('utf-8')).encrypt(f.read()))
 
 
 class User(Base):
@@ -119,7 +134,10 @@ class User(Base):
     settings = Column(String, default=None)
     
     group = Column(String, default=None)
-    paid_subscriptions = Column(JSON, default=None)
+    
+    plus_active_until = Column(DateTime(timezone=True), default=None)
+    transactions = Column(JSON, default=None)
+    
     
     closed_interactions = Column(JSON, default=None)    
 
