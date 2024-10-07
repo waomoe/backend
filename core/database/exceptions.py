@@ -47,3 +47,8 @@ class ItemNotFound(Exception):
 class BlacklistedValue(Exception):
     def __init__(self, message):
         self.message = message
+
+
+class ValueTooLong(Exception):
+    def __init__(self, message):
+        self.message = message

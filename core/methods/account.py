@@ -38,14 +38,6 @@ class Methods:
             email: str | None = None
             api_tokens: str | None = None
 
-        @app.get(self.path + '/')
-        async def root(request: Request) -> JSONResponse:
-            return JSONResponse({"avaliable_methods": ["auth", "edit"]})
-
-        @app.get(self.path + f"/auth/")
-        async def auth(request: Request) -> JSONResponse:
-            return JSONResponse({"avaliable_methods": ["register", "login", "confirmEmail", "resetToken", "getMe"]})
-
         @app.post(self.path + f"/auth/register")
         async def register(request: Request, account: Account, type: Literal['default', 'google', 'github', 'discord'] = 'default') -> JSONResponse:
             headers = dict(request.headers) 
@@ -192,10 +184,6 @@ class Methods:
                 }, status_code=200, headers=app.no_cache_headers
             )
         
-        @app.get(self.path + f"/edit/")
-        async def auth(request: Request) -> JSONResponse:
-            return JSONResponse({"avaliable_methods": ["editMe", "editAuth"]})
-        
         @app.post(self.path + f"/edit/editMe")
         async def editMe(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccount) -> JSONResponse:
             errors = []
@@ -212,6 +200,8 @@ class Methods:
                     errors.append(str(exc))
                 except UserAlreadyExists as exc:
                     errors.append(str(exc))
+                except ValueTooLong as exc:
+                    errors.append(str(exc))
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
                         
         @app.post(self.path + f"/auth/editAuth")
@@ -226,8 +216,4 @@ class Methods:
                     print(key, value)
                 
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
-            
-        @app.get(self.path + '/action/')  
-        async def action(request: Request) -> JSONResponse:
-            return JSONResponse({"avaliable_methods": [""]})
         

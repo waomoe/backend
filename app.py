@@ -19,7 +19,7 @@ import sys
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(docs_url='/docs')
 
-app.current_version = '1.0.1-dev'
+app.current_version = '1.0.2-dev'
 app.start_at = datetime.now()
 app.url = 'https://wao.moe'
 app.api_url = 'https://dev-api.wao.moe' if 'dev' in app.current_version else 'https://api.wao.moe'
@@ -84,7 +84,7 @@ app.no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate", 
 
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
-    return FileResponse('./api-logo.png')
+    return FileResponse('./logo.png')
 
 
 app.logger.info(f'Starting wao.moe backend...')
@@ -92,7 +92,9 @@ app.logger.info(f'Starting wao.moe backend...')
 modules = glob(join(dirname(__file__) + '/core/methods/', "*.py"))
 __all__ = [basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]
 for module in __all__:
-    module = __import__(f'core.methods.{module}', globals(), locals(), ['Methods'], 0)  
+    module = __import__(f'core.methods.{module}', globals(), locals(), ['Methods'], 0) 
+    if 'dev' not in app.current_version and module.__name__.split('.')[-1] == 'dev':
+        continue 
     module.Methods(app)
     app.logger.info(f'Loaded {module.__name__} methods')    
     

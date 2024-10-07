@@ -13,10 +13,6 @@ class Methods:
     def __init__(self, app):
         self.path = '/users'
         
-        @app.get(self.path + '/')
-        async def users(request: Request) -> JSONResponse:
-            return JSONResponse({"avaliable_methods": ["getUser"]})
-        
         @app.post(self.path + '/getUser')
         async def getUser(request: Request, user_id: int, x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             errors = []

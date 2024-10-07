@@ -19,9 +19,11 @@ from loguru import logger
 from random import choice, shuffle
 from string import ascii_letters, digits
 from asyncio import create_task
+from os.path import dirname
 from .exceptions import *
 
 
+db_backup_folder = f'{dirname(__file__)}/backups/'
 engine = create_async_engine('sqlite+aiosqlite:///./waomoe.sqlite')
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
@@ -77,7 +79,9 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     
     banned_until = Column(DateTime(timezone=True), default=None)
+    banned_reason = Column(String, default=None)
     muted_until = Column(DateTime(timezone=True), default=None)
+    muted_reason = Column(String, default=None)
     mod_logs = Column(JSON, default=None)
     
     email_confirm_key = Column(String, default=None)
@@ -267,7 +271,17 @@ class User(Base):
                 raise UserAlreadyExists(f'User with username {kwargs["username"]} already exists')
             if 'email' in kwargs and await cls.get(email=kwargs['email']) is not None:
                 raise UserAlreadyExists(f'User with email {kwargs["email"]} already exists')
+            if 'username' in kwargs and len(kwargs['username']) > 32:
+                raise ValueTooLong(f'Username {kwargs["username"]} is too long')
+            if 'name' in kwargs and len(kwargs['name']) > 32:
+                raise ValueTooLong(f'Name {kwargs["name"]} is too long')
+            if 'website_url' in kwargs and len(kwargs['website_url']) > 164:
+                raise ValueTooLong(f'Website URL {kwargs["website_url"]} is too long')
+            if 'about' in kwargs and len(kwargs['about']) > 1024:
+                raise ValueTooLong(f'About {kwargs["about"]} is too long')
             if 'password' in kwargs:
+                if len(kwargs['password']) > 64:
+                    raise ValueTooLong(f'Password {kwargs["password"]} is too long')
                 load_dotenv()
                 kwargs['password'] = Fernet(getenv('SECRET_KEY').encode('utf-8')).encrypt(user.password.encode('utf-8')).decode('utf-8')
             for key, value in kwargs.items():

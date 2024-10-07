@@ -11,6 +11,13 @@ class ShikimoriAPI:
         if self.session is None:
             self.session = ClientSession()
         async with self.session.get(self.base_url + path, **kwargs) as response:
-            return await response.json()
-
-
+            try:
+                response = await response.json()
+            except:
+                response = await response.text()
+        await self.session.close()
+        return response
+        
+    async def autocomplete(self, search: str, return_url: bool = False, **kwargs) -> dict:
+        return self.base_url + f'/api/animes' if return_url else await self.get('/api/animes', params={'search': search, 'limit': 10, **kwargs})
+    
