@@ -1,5 +1,5 @@
 from fastapi import Header, Request, HTTPException, APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Annotated, Literal
 from datetime import datetime, timedelta
@@ -47,9 +47,17 @@ class Methods:
             return JSONResponse({"avaliable_methods": ["register", "login", "confirmEmail", "resetToken", "getMe"]})
 
         @app.post(self.path + f"/auth/register")
-        async def register(request: Request, account: Account, type: Literal['default', 'google', 'github'] = 'default') -> JSONResponse:
+        async def register(request: Request, account: Account, type: Literal['default', 'google', 'github', 'discord'] = 'default') -> JSONResponse:
             headers = dict(request.headers) 
             errors = []
+            
+            if type != 'default':
+                load_dotenv()
+                
+                return JSONResponse({
+                    "url": f"https://accounts.google.com/o/oauth2/auth?response_type=code&client_id={getenv('GOOGLE_CLIENT_ID')}&redirect_uri={app.api_url}/account/auth/google&scope=openid%20profile%20email&access_type=offline"
+                }, status_code=200, headers=app.no_cache_headers)
+
             
             if 'x-real-ip' not in headers:
                 errors.append('X-Real-Ip header not found')
@@ -100,6 +108,13 @@ class Methods:
                     app.logger.error(e)
                     errors.append('An error occurred...')
             return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
+        
+        @app.get(self.path + "/auth/{type}")
+        async def oauthLogin(request: Request, type: Literal['default', 'google', 'github', 'discord'], code: str = None) -> JSONResponse:
+            
+            match type:
+                case 'google':
+                    pass 
         
         @app.post(self.path + f"/auth/login")
         async def login(request: Request, account: Account) -> JSONResponse:
@@ -195,6 +210,8 @@ class Methods:
                     return JSONResponse({"message": "Updated successfully"}, status_code=201, headers=app.no_cache_headers)
                 except BlacklistedValue as exc:
                     errors.append(str(exc))
+                except UserAlreadyExists as exc:
+                    errors.append(str(exc))
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
                         
         @app.post(self.path + f"/auth/editAuth")
@@ -210,3 +227,7 @@ class Methods:
                 
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
             
+        @app.get(self.path + '/action/')  
+        async def action(request: Request) -> JSONResponse:
+            return JSONResponse({"avaliable_methods": [""]})
+        

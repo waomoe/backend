@@ -40,6 +40,10 @@ class Methods:
         async def version(request: Request) -> PlainTextResponse:
             return app.current_version
         
+        @app.get(self.path + '/test')
+        async def test(request: Request, q: str = None) -> JSONResponse:
+            return await User.search(q)
+        
         @app.get(self.path + '/github', include_in_schema=False)
         async def github(request: Request) -> RedirectResponse:
             return RedirectResponse('https://github.com/waomoe')

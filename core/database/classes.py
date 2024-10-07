@@ -70,6 +70,7 @@ class User(Base):
     birthday = Column(DateTime(timezone=True), default=None)
     gender = Column(String, default=None)
     social = Column(JSON, default=None)
+    birthday = Column(DateTime(timezone=True), default=None)
       
     created_at = Column(DateTime(timezone=True), default=func.now())
     active_at = Column(DateTime(timezone=True), default=func.now())
@@ -84,7 +85,33 @@ class User(Base):
     
     language = Column(String, default='en')
     theme = Column(String, default=None)
-    privacy = Column(String, default=None)
+    
+    # Privacy key:
+    privacy = Column(String, default=None)  # None = everything is friend only
+    # 1st num - User profile visibility (1 - public, 2 - friends only, 3 - private)
+    # 2nd - Posts visibility (1 - public, 2 - friends only, 3 - private)
+    # 3rd - Lists visibility (1 - public, 2 - friends only, 3 - private)
+    # 4th - Favorites visibility (1 - public, 2 - friends only, 3 - private)
+    # 5th - about visibility (1 - public, 2 - friends only, 3 - private)
+    # 6th - Who can post on wall (1 - public, 2 - friends only, 3 - private)
+    # 7th - Who can comment on posts (1 - public, 2 - friends only, 3 - private)
+    # 8th - birthday visibility (1 - public, 2 - friends only, 3 - private)
+    # 9th - gender visibility (1 - public, 2 - friends only, 3 - private)
+    # 10th - location visibility (1 - public, 2 - friends only, 3 - private)
+    # 11th - social visibility (1 - public, 2 - friends only, 3 - private)
+    # 12th - email visibility (1 - public, 2 - friends only, 3 - private)
+    # 13th - website visibility (1 - public, 2 - friends only, 3 - private)
+    # 14th - following visibility (1 - public, 2 - friends only, 3 - private)
+    # 15th - followers visibility (1 - public, 2 - friends only, 3 - private)
+    # 16th - subscribed visibility (1 - public, 2 - friends only, 3 - private)
+    # 17th - subscribers visibility (1 - public, 2 - friends only, 3 - private)
+    # 18th - theme visibility (1 - public, 2 - friends only, 3 - private)
+    # 19th - language visibility (1 - public, 2 - friends only, 3 - private)
+    # 20th - avatar visibility (1 - public, 2 - friends only, 3 - private)
+    # 21th - banner visibility (1 - public, 2 - friends only, 3 - private)
+    # 22th - activity visibility (1 - public, 2 - friends only, 3 - private)
+    # 23th = birthday details visibility (1 - year, 2 - month + day 3 - year & month + day)
+    
     settings = Column(String, default=None)
     
     group = Column(String, default=None)
@@ -104,11 +131,7 @@ class User(Base):
     last_ip = Column(String, default=None)
     ip_history = Column(JSON, default=None)
     
-    initialized = False
-    
     def __init__(self, **kwargs):
-        
-        self.initialized = True
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -170,6 +193,10 @@ class User(Base):
         start_at = datetime.now()
         async with async_session() as session:
             user = (await session.execute(select(User).filter_by(**kwargs))).scalar_one_or_none()
+            if user and user.privacy is None:
+                user.privacy = '1222222222222222222222'
+            if user and user.following is None:
+                user.following = []
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return user
 
@@ -308,6 +335,33 @@ class User(Base):
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return Fernet(getenv('SECRET_KEY').encode('utf-8')).decrypt(user.password).decode('utf-8') == password
 
+    @classmethod
+    async def search(cls, *args, safe_search: bool = True) -> List[Self] | None:
+        start_at = datetime.now()
+        async with async_session() as session:
+            users = []
+            for arg in args:
+                users.extend((await session.execute(select(User).where(User.username.ilike(f'%{arg}%')))).scalars().all())
+                users.extend((await session.execute(select(User).where(User.user_id.ilike(f'%{arg}%')))).scalars().all())
+                users.extend((await session.execute(select(User).where(User.name.ilike(f'%{arg}%')))).scalars().all())
+            session.expunge_all()
+        if safe_search:
+            for i, user in enumerate(users):
+                if user.hidden or user is None:
+                    continue
+                users[i] = User(
+                    user_id=user.user_id, username=user.username, name=user.name,
+                    created_at=user.created_at, active_at=user.active_at,
+                    avatar_url=user.avatar_url, banner_url=user.banner_url,
+                    website_url=user.website_url, bio=user.bio, group=user.group,
+                    following=user.following, followers=user.followers,
+                    subscribers=user.subscribers, subscribed=user.subscribed,
+                    location=user.location, about=user.about, gender=user.gender,
+                    birthday=user.birthday
+                )
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return users[:50]
+
     def __repr__(self) -> str:
         return f'<User #{self.user_id} ({", ".join([str(self.name), str(self.username), str(self.email)])})>'
 
@@ -321,6 +375,7 @@ class Post(Base):
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
     
+    title = Column(String, default=None)
     content = Column(String, default=None)
     tags = Column(JSON, default=None)
     kind = Column(String, default=None)
@@ -380,6 +435,23 @@ class Post(Base):
             session.close()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(post_id=post.post_id)
+
+    @classmethod
+    async def search(cls, *args, safe_search: bool = True) -> List[Self]:
+        start_at = datetime.now()
+        async with async_session() as session:
+            posts = []
+            for arg in args:
+                posts.extend((await session.execute(select(Post).where(Post.content.ilike(f'%{arg}%')))).scalars().all())
+                posts.extend((await session.execute(select(Post).where(Post.tags.ilike(f'%{arg}%')))).scalars().all())
+                posts.extend((await session.execute(select(Post).where(Post.post_id.ilike(f'%{arg}%')))).scalars().all())
+                posts.extend((await session.execute(select(Post).where(Post.author_id.ilike(f'%{arg}%')))).scalars().all())
+                posts.extend((await session.execute(select(Post).where(Post.parent_id.ilike(f'%{arg}%')))).scalars().all())
+            session.expunge_all()
+        if safe_search:
+            posts = [post for post in posts if not post.deleted and not post.hidden]
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return posts
 
     def __repr__(self) -> str:
         return f'<Post #{self.post_id} [{self.author_id}]>'
