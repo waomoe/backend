@@ -25,6 +25,6 @@ class Methods:
             return await ShikimoriAPI().autocomplete(q)
         
         @app.get(self.path + '/parseItem')
-        async def parseItem(request: Request, item_type: Literal['animes', 'mangas'] = 'animes', item_id: int = 1) -> JSONResponse:
-            await ShikimoriAPI().parse_item(item_type, item_id, directy_to_db=True)
+        async def parseItem(request: Request, item_type: Literal['animes', 'mangas'], item_id: int) -> JSONResponse:
+            await ShikimoriAPI().parse_item(item_type, item_id)
         
