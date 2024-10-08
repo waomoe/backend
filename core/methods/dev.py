@@ -28,3 +28,15 @@ class Methods:
         async def parseItem(request: Request, item_type: Literal['animes', 'mangas'], item_id: int) -> JSONResponse:
             await ShikimoriAPI().parse_item(item_type, item_id)
         
+        @app.get(self.path + '/headers')
+        async def headers(request: Request):
+            return request.headers
+        
+        @app.get(self.path + '/translate')
+        async def translate(request: Request, string: str, lang: str = 'EN') -> JSONResponse:
+            return app.tl(string, lang)
+        
+        @app.get(self.path + '/tl_cache')
+        async def tl_cache(request: Request) -> JSONResponse:
+            return JSONResponse(app.translator.tlbook)
+        

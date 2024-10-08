@@ -14,6 +14,7 @@ fi
 SCRIPT=$(readlink -f "$0")
 SCRIPTPATH=$(dirname "$SCRIPT")
 python_executable=$(which python3.11)
+cd $SCRIPTPATH
 echo "Starting wao.moe backend on $host:$port with $python_executable" 
 $python_executable -m venv $SCRIPTPATH/.venv
 source .venv/bin/activate

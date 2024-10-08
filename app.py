@@ -11,7 +11,7 @@ from pprint import pformat
 from loguru._defaults import LOGURU_FORMAT
 from glob import glob
 from os.path import dirname, basename, isfile, join
-from asyncio import create_task
+from asyncio import create_task, run
 import logging
 import sys
 
@@ -25,6 +25,24 @@ app.url = 'https://dev.wao.moe' if 'dev' in app.current_version else "https://wa
 app.api_url = 'https://dev-api.wao.moe' if 'dev' in app.current_version else 'https://api.wao.moe'
 
 app.email = Email()
+app.translator = Translator()
+app.tl = app.translator.tl
+
+
+async def rechache_translations():
+    """
+    Re-cache translations every 10 minutes.
+
+    This is a background task that runs `app.translator.chache_translations` every 10 hours.
+    It is used to reload translations from file if they have changed.
+    """
+    while True:
+        app.translator.chache_translations()
+        app.logger.info('Re-cached translations')
+        sleep(60 * 10)
+
+
+Thread(target=run, args=(rechache_translations(),)).start()
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
