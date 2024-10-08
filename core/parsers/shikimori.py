@@ -26,13 +26,11 @@ class ShikimoriAPI:
         """
         data = await self.get(f'/api/{item_type}/{item_id}')
         if directy_to_db and data is not None and type(data) == dict:
-            if item_type == 'animes':
-                item = Anime
-            elif item_type == 'mangas':
-                item = Manga
-            if await item.get(mal_id=data['myanimelist_id']) is None:
-                await item.add(mal_id=data['myanimelist_id'])
-            await item.update(mal_id=data['myanimelist_id'], shiki_data=data, data_refresh=datetime.now())
+            if 'code' in data.keys() and data['code'] == 404:
+                return data
+            if await Item.get(mal_id=data['myanimelist_id'], kind='anime' if item_type == 'animes' else 'manga') is None:
+                await Item.add(mal_id=data['myanimelist_id'], kind='anime' if item_type == 'animes' else 'manga')
+            await Item.update(mal_id=data['myanimelist_id'], kind='anime' if item_type == 'animes' else 'manga', shiki_data=data, data_refresh=datetime.now())
         return data
     
     async def autocomplete(self, search: str, return_url: bool = False, **kwargs) -> dict:

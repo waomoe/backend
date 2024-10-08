@@ -577,11 +577,12 @@ class ItemList(Base):
         return await cls.get(list_id=list.list_id)
 
 
-class Anime(Base):
-    __tablename__ = 'animes'
+class Item(Base):
+    __tablename__ = 'items'
 
     item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     mal_id = Column(Integer, default=None)
+    kind = Column(String, default=None)
     
     shiki_data = Column(JSON, default=None)
     data_refresh = Column(DateTime(timezone=True), default=None)
@@ -597,7 +598,7 @@ class Anime(Base):
     async def add(cls, **kwargs) -> Self:
         start_at = datetime.now()
         async with async_session() as session:
-            item = Anime(**kwargs)
+            item = Item(**kwargs)
             session.add(item)
             await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
@@ -607,7 +608,7 @@ class Anime(Base):
     async def get(cls, **kwargs) -> Self | None:
         start_at = datetime.now()
         async with async_session() as session:
-            item = (await session.execute(select(Anime).filter_by(**kwargs))).scalars().first()
+            item = (await session.execute(select(Item).filter_by(**kwargs))).scalars().first()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return item
         
@@ -616,9 +617,9 @@ class Anime(Base):
         start_at = datetime.now()
         async with async_session() as session:
             if limit is not None:
-                items = (await session.execute(select(Anime).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
+                items = (await session.execute(select(Item).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
             else:
-                items = (await session.execute(select(Anime).filter_by(**kwargs))).scalars().all()
+                items = (await session.execute(select(Item).filter_by(**kwargs))).scalars().all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return items
     
@@ -627,11 +628,11 @@ class Anime(Base):
         start_at = datetime.now()
         async with async_session() as session:
             if mal_id is not None:
-                item = (await session.execute(select(Anime).filter_by(mal_id=mal_id))).scalars().first()
+                item = (await session.execute(select(Item).filter_by(mal_id=mal_id))).scalars().first()
             else:
                 if item_id is None:
                     item_id = cls.item_id
-                item = (await session.execute(select(Anime).filter_by(item_id=item_id))).scalars().first()
+                item = (await session.execute(select(Item).filter_by(item_id=item_id))).scalars().first()
             if item is None:
                 raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
             for key, value in kwargs.items():
@@ -646,88 +647,11 @@ class Anime(Base):
         async with async_session() as session:
             items = []
             for arg in args:
-                items.extend((await session.execute(select(Anime).where(Anime.name.ilike(f'%{arg}%')))).scalars().all())
-                items.extend((await session.execute(select(Anime).where(Anime.description.ilike(f'%{arg}%')))).scalars().all())
-                items.extend((await session.execute(select(Anime).where(Anime.mal_id.ilike(f'%{arg}%')))).scalars().all())
+                items.extend((await session.execute(select(Item).where(Item.name.ilike(f'%{arg}%')))).scalars().all())
+                items.extend((await session.execute(select(Item).where(Item.description.ilike(f'%{arg}%')))).scalars().all())
+                items.extend((await session.execute(select(Item).where(Item.mal_id.ilike(f'%{arg}%')))).scalars().all())
             session.expunge_all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
-
-
-class Manga(Base):
-    __tablename__ = 'mangas'
-
-    item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
-    mal_id = Column(Integer, default=None)
-    
-    shiki_data = Column(JSON, default=None)
-    data_refresh = Column(DateTime(timezone=True), default=None)
-    
-    favorited_by = Column(JSON, default=[])
-    in_lists = Column(JSON, default=[])
-    
-    ratings = Column(JSON, default=None)
-    upvotes = Column(JSON, default=[])
-    downvotes = Column(JSON, default=[])
-
-    @classmethod
-    async def add(cls, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with async_session() as session:
-            item = Manga(**kwargs)
-            session.add(item)
-            await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(item_id=item.item_id)
-    
-    @classmethod
-    async def get(cls, **kwargs) -> Self | None:
-        start_at = datetime.now()
-        async with async_session() as session:
-            item = (await session.execute(select(Manga).filter_by(**kwargs))).scalars().first()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return item
-
-    @classmethod
-    async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self] | List[None] | None:
-        start_at = datetime.now()
-        async with async_session() as session:
-            if limit is not None:
-                items = (await session.execute(select(Manga).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
-            else:
-                items = (await session.execute(select(Manga).filter_by(**kwargs))).scalars().all()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return items
-    
-    @classmethod
-    async def update(cls, item_id: int = None, mal_id: int = None, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with async_session() as session:
-            if mal_id is not None:
-                item = (await session.execute(select(Manga).filter_by(mal_id=mal_id))).scalars().first()
-            else:
-                if item_id is None:
-                    item_id = cls.item_id
-                item = (await session.execute(select(Manga).filter_by(item_id=item_id))).scalars().first()
-            if item is None:
-                raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
-            for key, value in kwargs.items():
-                setattr(item, key, value)
-            await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(item_id=item.item_id)
-    
-    @classmethod
-    async def search(cls, *args) -> List[Self]:
-        start_at = datetime.now()
-        async with async_session() as session:
-            items = []
-            for arg in args:
-                items.extend((await session.execute(select(Manga).where(Manga.name.ilike(f'%{arg}%')))).scalars().all())
-                items.extend((await session.execute(select(Manga).where(Manga.description.ilike(f'%{arg}%')))).scalars().all())
-                items.extend((await session.execute(select(Manga).where(Manga.mal_id.ilike(f'%{arg}%')))).scalars().all())
-            session.expunge_all()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return items
     
 
 async def create_tables():

@@ -21,7 +21,7 @@ app = FastAPI(docs_url='/docs')
 
 app.current_version = '1.0.2-dev'
 app.start_at = datetime.now()
-app.url = 'https://wao.moe'
+app.url = 'https://dev.wao.moe' if 'dev' in app.current_version else "https://wao.moe"
 app.api_url = 'https://dev-api.wao.moe' if 'dev' in app.current_version else 'https://api.wao.moe'
 
 app.email = Email()
