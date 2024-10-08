@@ -5,7 +5,8 @@ from cryptography.fernet import Fernet
 
 
 async def setup_hook(*args, **kwargs) -> None:
-    await backup_db()
+    await DatabaseBackups.backup_db()
+    # await DatabaseBackups.decrypt_db()
     if await User.get(username='waomoe') is None:
         print('Creating bot account...')
         root = await User.add(

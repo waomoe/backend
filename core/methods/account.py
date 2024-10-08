@@ -103,7 +103,6 @@ class Methods:
         
         @app.get(self.path + "/auth/{type}")
         async def oauthLogin(request: Request, type: Literal['default', 'google', 'github', 'discord'], code: str = None) -> JSONResponse:
-            
             match type:
                 case 'google':
                     pass 
