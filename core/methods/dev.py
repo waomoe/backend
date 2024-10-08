@@ -1,6 +1,7 @@
 from fastapi import Header, Request, HTTPException, APIRouter
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, PlainTextResponse
 from datetime import datetime
+from typing import Literal
 from ..database import *
 from ..parsers import *
 
@@ -22,4 +23,8 @@ class Methods:
         @app.get(self.path + '/autocomplete')
         async def autocomplete(request: Request, q: str = None) -> JSONResponse:
             return await ShikimoriAPI().autocomplete(q)
+        
+        @app.get(self.path + '/parseItem')
+        async def parseItem(request: Request, item_type: Literal['animes', 'mangas'] = 'animes', item_id: int = 1) -> JSONResponse:
+            await ShikimoriAPI().parse_item(item_type, item_id, directy_to_db=True)
         

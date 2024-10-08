@@ -1,12 +1,7 @@
 from core.database import *
-from random import choice
-from string import ascii_letters, digits
-from cryptography.fernet import Fernet
 
 
-async def setup_hook(*args, **kwargs) -> None:
-    await DatabaseBackups.backup_db()
-    # await DatabaseBackups.decrypt_db()
+async def setup_hook(*args, **kwargs) -> None:    
     if await User.get(username='waomoe') is None:
         print('Creating bot account...')
         root = await User.add(
@@ -15,3 +10,8 @@ async def setup_hook(*args, **kwargs) -> None:
         )
         await User.generate_token(root.user_id)
         
+
+async def sheduled_backup() -> None:
+    while True:
+        await DatabaseBackups.backup_db()
+        await sleep(60 * 60 * 6)

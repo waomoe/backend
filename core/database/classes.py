@@ -39,7 +39,6 @@ class PerfomanceMeter:
             if len(self.all) > 100000:
                 self.all = self.all[-100000:]
             logger.info(f'Database delay report')
-
             logger.info(f'Average time per action: {sum(self.all) / len(self.all)}s')
             logger.info(f'Average time per action (last 1k): {sum(self.all[-1000:]) / len(self.all[-1000:])}s')
             logger.info(f'Average time per action (last 100): {sum(self.all[-100:]) / len(self.all[-100:])}s')
@@ -386,7 +385,7 @@ class User(Base):
         return Fernet(getenv('SECRET_KEY').encode('utf-8')).decrypt(user.password).decode('utf-8') == password
 
     @classmethod
-    async def search(cls, *args, safe_search: bool = True) -> List[Self] | None:
+    async def search(cls, *args, safe_search: bool = True) -> List[Self] | List[None] | None:
         start_at = datetime.now()
         async with async_session() as session:
             users = []
@@ -581,10 +580,11 @@ class ItemList(Base):
 class Anime(Base):
     __tablename__ = 'animes'
 
-    anime_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
+    item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     mal_id = Column(Integer, default=None)
     
     shiki_data = Column(JSON, default=None)
+    data_refresh = Column(DateTime(timezone=True), default=None)
     
     favorited_by = Column(JSON, default=[])
     in_lists = Column(JSON, default=[])
@@ -601,7 +601,7 @@ class Anime(Base):
             session.add(item)
             await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(item_id=kwargs['item_id'])
+        return await cls.get(item_id=item.item_id)
     
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
@@ -626,12 +626,12 @@ class Anime(Base):
     async def update(cls, item_id: int = None, mal_id: int = None, **kwargs) -> Self:
         start_at = datetime.now()
         async with async_session() as session:
-            if item_id is None:
-                item_id = cls.item_id
             if mal_id is not None:
-                item = session.query(Anime).filter_by(mal_id=mal_id).first()
+                item = (await session.execute(select(Anime).filter_by(mal_id=mal_id))).scalars().first()
             else:
-                item = session.query(Anime).filter_by(item_id=item_id).first()
+                if item_id is None:
+                    item_id = cls.item_id
+                item = (await session.execute(select(Anime).filter_by(item_id=item_id))).scalars().first()
             if item is None:
                 raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
             for key, value in kwargs.items():
@@ -639,7 +639,6 @@ class Anime(Base):
             await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(item_id=item.item_id)
-
 
     @classmethod
     async def search(cls, *args) -> List[Self]:
@@ -657,10 +656,11 @@ class Anime(Base):
 class Manga(Base):
     __tablename__ = 'mangas'
 
-    manga_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
+    item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     mal_id = Column(Integer, default=None)
     
     shiki_data = Column(JSON, default=None)
+    data_refresh = Column(DateTime(timezone=True), default=None)
     
     favorited_by = Column(JSON, default=[])
     in_lists = Column(JSON, default=[])
@@ -677,7 +677,7 @@ class Manga(Base):
             session.add(item)
             await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(item_id=kwargs['item_id'])
+        return await cls.get(item_id=item.item_id)
     
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
@@ -702,12 +702,12 @@ class Manga(Base):
     async def update(cls, item_id: int = None, mal_id: int = None, **kwargs) -> Self:
         start_at = datetime.now()
         async with async_session() as session:
-            if item_id is None:
-                item_id = cls.item_id
             if mal_id is not None:
-                item = session.query(Manga).filter_by(mal_id=mal_id).first()
+                item = (await session.execute(select(Manga).filter_by(mal_id=mal_id))).scalars().first()
             else:
-                item = session.query(Manga).filter_by(item_id=item_id).first()
+                if item_id is None:
+                    item_id = cls.item_id
+                item = (await session.execute(select(Manga).filter_by(item_id=item_id))).scalars().first()
             if item is None:
                 raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
             for key, value in kwargs.items():

@@ -13,7 +13,6 @@ class UserNotFound(Exception):
         self.message = message
         
 
-
 class PostNotInitialized(Exception):
     def __init__(self, message):
         self.message = message
