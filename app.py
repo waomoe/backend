@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from slowapi.errors import RateLimitExceeded
@@ -30,7 +30,7 @@ app.tl = app.translator.tl
 
 
 async def rechache_translations():
-    """
+    """ 
     Re-cache translations every 10 minutes.
 
     This is a background task that runs `app.translator.chache_translations` every 10 minutes.
@@ -51,7 +51,7 @@ app.logger = logger
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://dev.wao.moe", "https://wao.moe", "https://dev-api.wao.moe", "https://api.wao.moe"],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -101,8 +101,9 @@ logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
 app.no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
 
 
+@app.state.limiter.limit('15/minute')
 @app.get('/favicon.ico', include_in_schema=False)
-async def favicon():
+async def favicon(request: Request):
     return FileResponse('./logo.png')
 
 
@@ -119,3 +120,4 @@ for module in __all__:
     
 app.setup_hook = create_task(setup_hook())
 app.logger.success(f'Started wao.moe backend v{app.current_version} in {datetime.now() - app.start_at}')
+app.logger.info(f'\n\n\t\tWAO.MOE Backend [v{app.current_version}]\n\t\tAPI URL: {app.api_url}\n\t\tFrontend URL: {app.url}\n\t\tSMTP: {app.email}\n\t\tModules loaded: {len(__all__)}\n')

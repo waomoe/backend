@@ -107,6 +107,7 @@ class Methods:
                 case 'google':
                     pass 
         
+        @app.state.limiter.limit('6/minute')
         @app.post(self.path + f"/auth/login")
         async def login(request: Request, account: Account) -> JSONResponse:
             headers = dict(request.headers) 
@@ -155,6 +156,7 @@ class Methods:
             if len(errors) > 0:
                 return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
 
+        @app.state.limiter.limit('5/minute')
         @app.get(self.path + f'/auth/confirmEmail')
         async def confirmEmail(request: Request, key: str) -> JSONResponse:
             user = await User.get(email_confirm_key=key)
@@ -163,6 +165,7 @@ class Methods:
                 return JSONResponse({'message': 'Email confirmed successfully'}, status_code=200, headers=app.no_cache_headers)
             return JSONResponse({'message': 'Email confirmation failed'}, status_code=400, headers=app.no_cache_headers)
 
+        @app.state.limiter.limit('40/minute')
         @app.get(self.path + f"/auth/getMe")
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
@@ -183,6 +186,7 @@ class Methods:
                 }, status_code=200, headers=app.no_cache_headers
             )
         
+        @app.state.limiter.limit('10/minute')
         @app.post(self.path + f"/edit/editMe")
         async def editMe(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccount) -> JSONResponse:
             errors = []
@@ -203,6 +207,7 @@ class Methods:
                     errors.append(str(exc))
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
                         
+        @app.state.limiter.limit('10/minute')
         @app.post(self.path + f"/auth/editAuth")
         async def editAuth(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccountAuth) -> JSONResponse:
             errors = []
@@ -215,4 +220,6 @@ class Methods:
                     print(key, value)
                 
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
+        
+        # @app.get(self.path + f"/action/lists")
         
