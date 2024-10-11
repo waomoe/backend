@@ -121,6 +121,12 @@ class User(Base):
     language = Column(String, default='en')
     theme = Column(String, default=None)
     
+    privacy_keys = {
+        "email": 12, "about": 5, "location": 10, "gender": 9, "social": 11, "website_url": 13,
+        "following": 14, "followers": 15, "subscribed": 16, "subscribers": 17, "theme": 18,
+        "language": 19, "avatar_url": 20, "banner_url": 21, "active_at": 22
+    }
+    
     # Privacy key:
     privacy = Column(String, default=None)  # None = everything is friend only
     # 1st num - User profile visibility (1 - public, 2 - friends only, 3 - private)
@@ -173,6 +179,19 @@ class User(Base):
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    async def get_privacy_settings(self):
+        if self and self.privacy is None:
+            self.privacy = '1' * 23
+        for key in self.__dict__.keys():
+            if key in self.privacy_keys.keys():
+                match self.privacy[self.privacy_keys[key] - 1]:
+                    case 1:
+                        setattr(self, key, 'public')
+                    case 2:
+                        setattr(self, key, 'friends')
+                    case 3:
+                        setattr(self, key, 'private')
 
     @classmethod
     async def add(cls, **kwargs) -> Self:
@@ -232,10 +251,10 @@ class User(Base):
         start_at = datetime.now()
         async with async_session() as session:
             user = (await session.execute(select(User).filter_by(**kwargs))).scalar_one_or_none()
-            if user and user.privacy is None:
-                user.privacy = '1222222222222222222222'
             if user and user.following is None:
                 user.following = []
+        if user:
+            await user.get_privacy_settings()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return user
 
@@ -264,6 +283,9 @@ class User(Base):
                 users = (await session.execute(select(User).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
             else:
                 users = (await session.execute(select(User).filter_by(**kwargs))).scalars().all()
+        users = [user for user in users if user]
+        for user in users:
+            await user.get_privacy_settings()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return users
 
@@ -390,8 +412,10 @@ class User(Base):
         async with async_session() as session:
             users = []
             for arg in args:
-                users.extend((await session.execute(select(User).where(User.username.ilike(f'%{arg}%')))).scalars().all())
+                if arg is None:
+                    continue
                 users.extend((await session.execute(select(User).where(User.user_id.ilike(f'%{arg}%')))).scalars().all())
+                users.extend((await session.execute(select(User).where(User.username.ilike(f'%{arg}%')))).scalars().all())
                 users.extend((await session.execute(select(User).where(User.name.ilike(f'%{arg}%')))).scalars().all())
             session.expunge_all()
         if safe_search:
@@ -492,9 +516,11 @@ class Post(Base):
         async with async_session() as session:
             posts = []
             for arg in args:
+                if arg is None:
+                    continue
+                posts.extend((await session.execute(select(Post).where(Post.post_id.ilike(f'%{arg}%')))).scalars().all())
                 posts.extend((await session.execute(select(Post).where(Post.content.ilike(f'%{arg}%')))).scalars().all())
                 posts.extend((await session.execute(select(Post).where(Post.tags.ilike(f'%{arg}%')))).scalars().all())
-                posts.extend((await session.execute(select(Post).where(Post.post_id.ilike(f'%{arg}%')))).scalars().all())
                 posts.extend((await session.execute(select(Post).where(Post.author_id.ilike(f'%{arg}%')))).scalars().all())
                 posts.extend((await session.execute(select(Post).where(Post.parent_id.ilike(f'%{arg}%')))).scalars().all())
             session.expunge_all()
@@ -647,9 +673,11 @@ class Item(Base):
         async with async_session() as session:
             items = []
             for arg in args:
+                if arg is None:
+                    continue
+                items.extend((await session.execute(select(Item).where(Item.mal_id.ilike(f'%{arg}%')))).scalars().all())
                 items.extend((await session.execute(select(Item).where(Item.name.ilike(f'%{arg}%')))).scalars().all())
                 items.extend((await session.execute(select(Item).where(Item.description.ilike(f'%{arg}%')))).scalars().all())
-                items.extend((await session.execute(select(Item).where(Item.mal_id.ilike(f'%{arg}%')))).scalars().all())
             session.expunge_all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
     

@@ -25,6 +25,8 @@ class Methods:
             if len(errors) == 0:
                 results = []
 
+                if type == 'any' or type == 'item':
+                    results += [await ShikimoriAPI().autocomplete(q, limit=50, return_url=True)]
                 if type == 'any' or type == 'user':                
                     results += await User.search(q)
                 if type == 'any' or type == 'post':

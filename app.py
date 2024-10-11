@@ -33,10 +33,11 @@ async def rechache_translations():
     """
     Re-cache translations every 10 minutes.
 
-    This is a background task that runs `app.translator.chache_translations` every 10 hours.
+    This is a background task that runs `app.translator.chache_translations` every 10 minutes.
     It is used to reload translations from file if they have changed.
     """
     while True:
+        app.logger.info('Chaching translations...')
         app.translator.chache_translations()
         app.logger.info('Re-cached translations')
         sleep(60 * 10)

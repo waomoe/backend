@@ -35,7 +35,7 @@ class ShikimoriAPI:
         return data
     
     async def autocomplete(self, search: str, return_url: bool = False, **kwargs) -> dict:
-        animes = self.base_url + f'/api/animes' if return_url else await self.get('/api/animes', params={'search': search, 'limit': 10, **kwargs})
-        mangas = self.base_url + f'/api/mangas' if return_url else await self.get('/api/mangas', params={'search': search, 'limit': 10, **kwargs})
-        return {'animes': animes, 'mangas': mangas}
+        animes = self.base_url + f'/api/animes?search={search}&limit=50' if return_url else await self.get('/api/animes', params={'search': search, 'limit': 10, **kwargs})
+        mangas = self.base_url + f'/api/mangas?search={search}&limit=50' if return_url else await self.get('/api/mangas', params={'search': search, 'limit': 10, **kwargs})
+        return dict({'animes': animes, 'mangas': mangas})
     
