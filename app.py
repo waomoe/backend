@@ -109,6 +109,8 @@ async def favicon(request: Request):
 
 app.logger.info(f'Starting wao.moe backend...')
 
+app.checks = Checks(app)
+
 modules = glob(join(dirname(__file__) + '/core/methods/', "*.py"))
 __all__ = [basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]
 for module in __all__:

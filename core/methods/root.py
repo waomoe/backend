@@ -37,4 +37,10 @@ class Methods:
         @app.get(self.path + '/autocomplete')
         async def autocomplete(request: Request, q: str = None, type: Literal['any', 'item', 'list', 'user', 'post'] = 'any', x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             errors = []
-            return await ShikimoriAPI().autocomplete(q)
+            search = {}
+            if type == 'any' or type == 'item':
+                response = await ShikimoriAPI().autocomplete(q)
+                search['animes'], search['mangas'] = response['animes'], response['mangas']
+            if type == 'any' or type == 'list':
+                search['lists'] = await ItemList.se
+            return search

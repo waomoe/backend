@@ -18,5 +18,5 @@ $python_executable -m venv $SCRIPTPATH/.venv
 source .venv/bin/activate
 $python_executable -m pip install --upgrade pip
 $python_executable -m pip install -r requirements.txt
-cd $SCRIPTPATH
+
 $python_executable -m uvicorn app:app --host $host --port $port

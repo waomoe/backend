@@ -1,4 +1,4 @@
-from fastapi import Header, Request, HTTPException, APIRouter
+from fastapi import Header, Request, HTTPException, APIRouter, Depends
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Annotated, Literal
@@ -101,7 +101,7 @@ class Methods:
                     errors.append('An error occurred...')
             return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
         
-        @app.get(self.path + "/auth/{type}")
+        @app.get(self.path + "/auth/oauth/{type}")
         async def oauthLogin(request: Request, type: Literal['default', 'google', 'github', 'discord'], code: str = None) -> JSONResponse:
             match type:
                 case 'google':
@@ -131,27 +131,19 @@ class Methods:
                     "user_id": user.user_id,
                     "token": user.token if user.token else await User.generate_token(user.user_id)
                 }, status_code=201, headers=app.no_cache_headers)
-
-        @app.post(self.path + f"/auth/resetToken")
-        async def resetToken(request: Request, account: Account) -> JSONResponse:
+       
+        @app.post(self.path + f"/auth/resetToken", dependencies=[Depends(app.checks.auth_required)])
+        async def resetToken(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
             
-            if account.email is None and account.username is None:
-                errors.append('Either username or email must be provided')
-                
-            user = await User.get(username=account.username) if account.username else await User.get(email=account.email)
-            if user is None:
-                errors.append('Username or password not found')
-            else:
-                if await User.compare_password(user.user_id, account.password):
-                    return JSONResponse({
-                            "message": "Token reset successful", 
-                            "user_id": user.user_id,
-                            "token": await User.generate_token(user.user_id)
-                        }, status_code=201, headers=app.no_cache_headers
-                    )
-                else:
-                    errors.append('Username or password not found')
+            user = await User.get(token=x_authorization)
+
+            return JSONResponse({
+                    "message": "Token reset successful", 
+                    "user_id": user.user_id,
+                    "token": await User.generate_token(user.user_id)
+                }, status_code=201, headers=app.no_cache_headers
+            )
             
             if len(errors) > 0:
                 return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
@@ -166,13 +158,11 @@ class Methods:
             return JSONResponse({'message': 'Email confirmation failed'}, status_code=400, headers=app.no_cache_headers)
 
         @app.state.limiter.limit('40/minute')
-        @app.get(self.path + f"/auth/getMe")
+        @app.get(self.path + f"/auth/getMe", dependencies=[Depends(app.checks.auth_required)])
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
-            
+
             user = await User.get(token=x_authorization)
-            if user is None:
-                errors.append('User not found')
             
             if len(errors) > 0:
                 return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
@@ -187,13 +177,11 @@ class Methods:
             )
         
         @app.state.limiter.limit('10/minute')
-        @app.post(self.path + f"/edit/editMe")
+        @app.post(self.path + f"/edit/editMe", dependencies=[Depends(app.checks.auth_required)])
         async def editMe(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccount) -> JSONResponse:
             errors = []
             
             user = await User.get(token=x_authorization)
-            if user is None:
-                errors.append('Token is invalid')
                 
             if len(errors) == 0:
                 try:
@@ -208,7 +196,7 @@ class Methods:
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
                         
         @app.state.limiter.limit('10/minute')
-        @app.post(self.path + f"/auth/editAuth")
+        @app.post(self.path + f"/auth/editAuth", dependencies=[Depends(app.checks.auth_required)])
         async def editAuth(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccountAuth) -> JSONResponse:
             errors = []
             user = await User.get(token=x_authorization)

@@ -85,12 +85,12 @@ class User(Base):
         
     user_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     email = Column(String, default=None, unique=True)
-    password = Column(String, default=None)
-    two_factor = Column(String, default=None)
     username = Column(String, default=None, unique=True)
     name = Column(String, default=None)
-    hidden = Column(Boolean, default=False)
+    password = Column(String, default=None)
     token = Column(String, default=None, unique=True)
+    two_factor = Column(String, default=None)
+    hidden = Column(Boolean, default=False)
     oauth = Column(JSON, default=None)
     api_tokens = Column(JSON, default=None)
     
@@ -388,7 +388,7 @@ class User(Base):
         
         token = list(encMessage.decode('utf-8'))
         shuffle(token)
-        token = ('W-' + ''.join(token))[:96]
+        token = ('wA' + ''.join(token))[:96]
         
         if await cls.get(token=token):
             return await cls.generate_token(user_id)
@@ -602,6 +602,23 @@ class ItemList(Base):
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return await cls.get(list_id=list.list_id)
 
+    @classmethod
+    async def search(cls, safe_search: bool = True, *args) -> List[Self] | List[None] | None:
+        start_at = datetime.now()
+        async with async_session() as session:
+            lists = []
+            for arg in args:
+                if arg is None:
+                    continue
+                lists.extend((await session.execute(select(ItemList).where(ItemList.list_id.ilike(f'%{arg}%')))).scalars().all())
+                lists.extend((await session.execute(select(ItemList).where(ItemList.uniq_id.ilike(f'%{arg}%')))).scalars().all())
+                lists.extend((await session.execute(select(ItemList).where(ItemList.name.ilike(f'%{arg}%')))).scalars().all())
+                lists.extend((await session.execute(select(ItemList).where(ItemList.description.ilike(f'%{arg}%')))).scalars().all())
+            session.expunge_all()
+        if safe_search:
+            lists = [list for list in lists if not list.deleted and not list.hidden]
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return lists
 
 class Item(Base):
     __tablename__ = 'items'
@@ -680,6 +697,7 @@ class Item(Base):
                 items.extend((await session.execute(select(Item).where(Item.description.ilike(f'%{arg}%')))).scalars().all())
             session.expunge_all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return items
     
 
 async def create_tables():

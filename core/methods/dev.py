@@ -22,11 +22,14 @@ class Methods:
         
         @app.get(self.path + '/autocomplete')
         async def autocomplete(request: Request, q: str = None) -> JSONResponse:
-            return await ShikimoriAPI().autocomplete(q)
+            response = await ShikimoriAPI().autocomplete(q)
+            response['users'] = await User.search(q)
+            return response
         
         @app.get(self.path + '/parseItem')
         async def parseItem(request: Request, item_type: Literal['animes', 'mangas'], item_id: int) -> JSONResponse:
-            await ShikimoriAPI().parse_item(item_type, item_id)
+            response = await ShikimoriAPI().parse_item(item_type, item_id)
+            return response
         
         @app.get(self.path + '/headers')
         async def headers(request: Request):
