@@ -332,10 +332,10 @@ class User(Base):
                 raise ValueTooLong(f'Username {kwargs["username"]} is too long')
             if 'name' in kwargs and len(kwargs['name']) > 32:
                 raise ValueTooLong(f'Name {kwargs["name"]} is too long')
-            if 'website_url' in kwargs and len(kwargs['website_url']) > 164:
+            if 'website_url' in kwargs and len(kwargs['website_url']) > 128:
                 raise ValueTooLong(f'Website URL {kwargs["website_url"]} is too long')
-            if 'about' in kwargs and len(kwargs['about']) > 1024:
-                raise ValueTooLong(f'About {kwargs["about"]} is too long')
+            if 'about' in kwargs and len(kwargs['about']) > 768:
+                raise ValueTooLong(f'About is too long')
             if 'password' in kwargs:
                 if len(kwargs['password']) > 64:
                     raise ValueTooLong(f'Password {kwargs["password"]} is too long')
@@ -446,16 +446,16 @@ class Post(Base):
     post_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     parent_id = Column(Integer, default=None)
     author_id = Column(Integer, default=None)
+    kind = Column(String, default=None)
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
     
     title = Column(String, default=None)
     content = Column(String, default=None)
     tags = Column(JSON, default=None)
-    kind = Column(String, default=None)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    edit_at = Column(DateTime(timezone=True), server_default=None)
+    data_refresh_at = Column(DateTime(timezone=True), server_default=None)
     update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     upvotes = Column(JSON, default=None)

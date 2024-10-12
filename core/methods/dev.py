@@ -20,12 +20,6 @@ class Methods:
                 await User.add(username=f'test_{i}', password=''.join(choice(ascii_letters + digits) for _ in range(32)))
             return JSONResponse({'status': 'ok'})
         
-        @app.get(self.path + '/autocomplete')
-        async def autocomplete(request: Request, q: str = None) -> JSONResponse:
-            response = await ShikimoriAPI().autocomplete(q)
-            response['users'] = await User.search(q)
-            return response
-        
         @app.get(self.path + '/parseItem')
         async def parseItem(request: Request, item_type: Literal['animes', 'mangas'], item_id: int) -> JSONResponse:
             response = await ShikimoriAPI().parse_item(item_type, item_id)

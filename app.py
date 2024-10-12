@@ -46,6 +46,7 @@ async def rechache_translations():
 Thread(target=run, args=(rechache_translations(),)).start()
 
 app.state.limiter = limiter
+app.limit = app.state.limiter.limit
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.logger = logger 
 
@@ -122,4 +123,6 @@ for module in __all__:
     
 app.setup_hook = create_task(setup_hook())
 app.logger.success(f'Started wao.moe backend v{app.current_version} in {datetime.now() - app.start_at}')
-app.logger.info(f'\n\n\t\tWAO.MOE Backend [v{app.current_version}]\n\t\tAPI URL: {app.api_url}\n\t\tFrontend URL: {app.url}\n\t\tSMTP: {app.email}\n\t\tModules loaded: {len(__all__)}\n')
+app.setup_hook.add_done_callback(lambda x:
+    app.logger.info(f'\n\n\t\tWAO.MOE Backend [v{app.current_version}]\n\t\tAPI URL: {app.api_url}\n\t\tFrontend URL: {app.url}\n\t\tModules loaded: {len(__all__)}\n')
+)

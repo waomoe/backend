@@ -38,6 +38,7 @@ class Methods:
             email: str | None = None
             api_tokens: str | None = None
 
+        @app.limit('30/hour')
         @app.post(self.path + f"/auth/register")
         async def register(request: Request, account: Account, type: Literal['default', 'google', 'github', 'discord'] = 'default') -> JSONResponse:
             headers = dict(request.headers) 
@@ -76,7 +77,7 @@ class Methods:
                             
             if len(errors) == 0:
                 try:
-                    email_confirm_key = "".join(choice(ascii_letters + digits) for _ in range(82))
+                    email_confirm_key = "".join(choice(ascii_letters + digits) for _ in range(82)) if account.email else None
                     email_confirm_url = f"{app.api_url}/account/auth/confirmEmail?key={email_confirm_key}"
                     user = await User.add(
                         username=account.username,
@@ -107,7 +108,7 @@ class Methods:
                 case 'google':
                     pass 
         
-        @app.state.limiter.limit('6/minute')
+        @app.limit('6/minute')
         @app.post(self.path + f"/auth/login")
         async def login(request: Request, account: Account) -> JSONResponse:
             headers = dict(request.headers) 
@@ -133,11 +134,8 @@ class Methods:
                 }, status_code=201, headers=app.no_cache_headers)
        
         @app.post(self.path + f"/auth/resetToken", dependencies=[Depends(app.checks.auth_required)])
-        async def resetToken(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
-            errors = []
-            
+        async def resetToken(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:         
             user = await User.get(token=x_authorization)
-
             return JSONResponse({
                     "message": "Token reset successful", 
                     "user_id": user.user_id,
@@ -145,10 +143,7 @@ class Methods:
                 }, status_code=201, headers=app.no_cache_headers
             )
             
-            if len(errors) > 0:
-                return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
-
-        @app.state.limiter.limit('5/minute')
+        @app.limit('5/minute')
         @app.get(self.path + f'/auth/confirmEmail')
         async def confirmEmail(request: Request, key: str) -> JSONResponse:
             user = await User.get(email_confirm_key=key)
@@ -157,7 +152,7 @@ class Methods:
                 return JSONResponse({'message': 'Email confirmed successfully'}, status_code=200, headers=app.no_cache_headers)
             return JSONResponse({'message': 'Email confirmation failed'}, status_code=400, headers=app.no_cache_headers)
 
-        @app.state.limiter.limit('40/minute')
+        @app.limit('40/minute')
         @app.get(self.path + f"/auth/getMe", dependencies=[Depends(app.checks.auth_required)])
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
@@ -176,7 +171,7 @@ class Methods:
                 }, status_code=200, headers=app.no_cache_headers
             )
         
-        @app.state.limiter.limit('10/minute')
+        @app.limit('10/minute')
         @app.post(self.path + f"/edit/editMe", dependencies=[Depends(app.checks.auth_required)])
         async def editMe(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccount) -> JSONResponse:
             errors = []
@@ -195,7 +190,7 @@ class Methods:
                     errors.append(str(exc))
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
                         
-        @app.state.limiter.limit('10/minute')
+        @app.limit('10/minute')
         @app.post(self.path + f"/auth/editAuth", dependencies=[Depends(app.checks.auth_required)])
         async def editAuth(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccountAuth) -> JSONResponse:
             errors = []
