@@ -38,8 +38,8 @@ class Methods:
             email: str | None = None
             api_tokens: str | None = None
 
-        @app.limit('30/hour')
         @app.post(self.path + f"/auth/register")
+        @app.limit('10/hour')
         async def register(request: Request, account: Account, type: Literal['default', 'google', 'github', 'discord'] = 'default') -> JSONResponse:
             headers = dict(request.headers) 
             errors = []
@@ -108,8 +108,8 @@ class Methods:
                 case 'google':
                     pass 
         
-        @app.limit('6/minute')
         @app.post(self.path + f"/auth/login")
+        @app.limit('6/minute')
         async def login(request: Request, account: Account) -> JSONResponse:
             headers = dict(request.headers) 
             errors = []
@@ -143,17 +143,17 @@ class Methods:
                 }, status_code=201, headers=app.no_cache_headers
             )
             
-        @app.limit('5/minute')
         @app.get(self.path + f'/auth/confirmEmail')
+        @app.limit('5/minute')
         async def confirmEmail(request: Request, key: str) -> JSONResponse:
             user = await User.get(email_confirm_key=key)
             if user:
                 await User.update(user.user_id, email_confirmed_at=datetime.utcnow(), email_confirm_key=None)
                 return JSONResponse({'message': 'Email confirmed successfully'}, status_code=200, headers=app.no_cache_headers)
             return JSONResponse({'message': 'Email confirmation failed'}, status_code=400, headers=app.no_cache_headers)
-
-        @app.limit('40/minute')
+        
         @app.get(self.path + f"/auth/getMe", dependencies=[Depends(app.checks.auth_required)])
+        @app.limit('30/minute 3/second')
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
 
@@ -189,9 +189,9 @@ class Methods:
                 except ValueTooLong as exc:
                     errors.append(str(exc))
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
-                        
-        @app.limit('10/minute')
+                    
         @app.post(self.path + f"/auth/editAuth", dependencies=[Depends(app.checks.auth_required)])
+        @app.limit('10/minute')
         async def editAuth(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccountAuth) -> JSONResponse:
             errors = []
             user = await User.get(token=x_authorization)

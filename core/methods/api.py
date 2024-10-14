@@ -19,8 +19,8 @@ class Methods:
                 headers=app.no_cache_headers
             )
         
-        @app.limit('5/minute')
         @app.get(self.path + '/database')
+        @app.limit('5/minute')
         async def database(request: Request) -> JSONResponse:     
             await User.get_all(limit=500)
             return JSONResponse(

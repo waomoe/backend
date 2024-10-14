@@ -102,13 +102,13 @@ logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
 app.no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
 
 
-@app.state.limiter.limit('15/minute')
 @app.get('/favicon.ico', include_in_schema=False)
+@app.state.limiter.limit('2/minute')
 async def favicon(request: Request):
     return FileResponse('./logo.png')
 
 
-app.logger.info(f'Starting wao.moe backend...')
+app.logger.info(f'Loading modules from core.methods...')
 
 app.checks = Checks(app)
 
