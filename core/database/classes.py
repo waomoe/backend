@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float, JSON, DateTime, func, BINARY, Identity
+from sqlalchemy import Column, Integer, String, Boolean, Float, JSON, DateTime, func, BINARY, Identity
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.future import select
@@ -12,14 +12,13 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from os import getenv
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 from threading import Thread
 from time import sleep
 from loguru import logger
 from random import choice, shuffle
-from string import ascii_letters, digits
+from string import ascii_letters, digits    
 from asyncio import create_task
-from os.path import dirname
 from .exceptions import *
 
 
@@ -86,6 +85,7 @@ class User(Base):
     user_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     email = Column(String, default=None, unique=True)
     username = Column(String, default=None, unique=True)
+    aliases = Column(JSON, default=None)
     name = Column(String, default=None)
     password = Column(String, default=None)
     token = Column(String, default=None, unique=True)
@@ -96,8 +96,11 @@ class User(Base):
     
     avatar_url = Column(String, default=None)
     banner_url = Column(String, default=None)
+    avatar_decoration = Column(String, default=None)
+    profile_decoration = Column(String, default=None)
     website_url = Column(String, default=None)
     bio = Column(String, default=None)
+    status = Column(String, default=None)
     location = Column(String, default=None)
     about = Column(String, default=None)
     birthday = Column(DateTime(timezone=True), default=None)
@@ -169,6 +172,8 @@ class User(Base):
     subscribed = Column(JSON, default=None)
     subscribers = Column(JSON, default=None)
     blocked_users = Column(JSON, default=None)
+    
+    custom_styles = Column(JSON, default=None)
 
     sessions = Column(JSON, default=None)
     reg_ip = Column(String, default=None)

@@ -153,7 +153,7 @@ class Methods:
             return JSONResponse({'message': 'Email confirmation failed'}, status_code=400, headers=app.no_cache_headers)
         
         @app.get(self.path + f"/auth/getMe", dependencies=[Depends(app.checks.auth_required)])
-        @app.limit('30/minute 3/second')
+        @app.limit('30/minute','3/second')
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
 
