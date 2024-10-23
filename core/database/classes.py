@@ -185,18 +185,23 @@ class User(Base):
         for key, value in kwargs.items():
             setattr(self, key, value)
 
+    class Privacy:
+        pass
+
     async def get_privacy_settings(self):
         if self and self.privacy is None:
-            self.privacy = '1' * 23
+            self.privacy = '2' * 23
+        privacy_dict = {}
         for key in self.__dict__.keys():
             if key in self.privacy_keys.keys():
-                match self.privacy[self.privacy_keys[key] - 1]:
+                match int(self.privacy[self.privacy_keys[key] - 1]):
                     case 1:
-                        setattr(self, key, 'public')
-                    case 2:
-                        setattr(self, key, 'friends')
+                        privacy_dict[key] = 'public'
+                    case 2: 
+                        privacy_dict[key] = 'friends'
                     case 3:
-                        setattr(self, key, 'private')
+                        privacy_dict[key] = 'private'
+        return privacy_dict
 
     @classmethod
     async def add(cls, **kwargs) -> Self:
@@ -255,7 +260,7 @@ class User(Base):
         """
         start_at = datetime.now()
         async with async_session() as session:
-            user = (await session.execute(select(User).filter_by(**kwargs))).scalar_one_or_none()
+            user = (await session.execute(select(User).filter_by(**kwargs))).scalars().first()
             if user and user.following is None:
                 user.following = []
         if user:

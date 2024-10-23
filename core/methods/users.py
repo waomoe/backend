@@ -17,9 +17,11 @@ class Methods:
         async def getUser(request: Request, user_id: int, x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             errors = []
             
-            user = await User.get(token=x_authorization)
-            if user is None and x_authorization is not None:
-                errors.append('Token is invalid')            
+            user = None
+            if x_authorization is not None:
+                user = await User.get(token=x_authorization)
+                if user is None:
+                    errors.append('Token is invalid')            
             
             if len(errors) == 0:
                 target = await User.get(user_id=user_id)
@@ -27,11 +29,14 @@ class Methods:
                 if target is None:
                     errors.append('User not found')
                 if len(errors) == 0:
-                    keys = ['user_id', 'username', 'name']
-                    if target.privacy[0] == '1' or target.privacy[0] == '3' and user and user.user_id == target.user_id or target.privacy[0] == '2' and user and user.user_id in target.following:
-                        for key in target.privacy:
-                            if (target.privacy[target.privacy_keys[key] - 1] == '1') or (target.privacy[user.privacy_keys[key] - 1] == '2' and (user and user.user_id in target.following)) or (target.privacy[user.privacy_keys[key] - 1] == '3' and (user and user.user_id == target.user_id)):
-                                keys.append(key)
+                    keys = ['user_id', 'username', 'name', 'avatar_decoration', 'profile_decoration', 'custom_styles']
+                    is_me = (target.user_id == user.user_id) if user else False
+                    is_friend = (target.user_id in user.following and user.user_id in target.following) if (user and user.following) else False
+                    is_blocked = (user.user_id in target.blocked_users) if (user and target.blocked_users) else False
+                    target_privacy =await target.get_privacy_settings()
+                    for key in target_privacy.keys():
+                        if is_me or (is_friend and target_privacy[key] == 'friends'):
+                            keys += [key]
                     return {key: getattr(target, key) for key in keys}
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
         

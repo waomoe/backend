@@ -22,3 +22,4 @@ class Checks:
         if not user.group == 'admin':
             raise HTTPException(detail="You are not an admin", status_code=401)
         return x_authorization
+    
