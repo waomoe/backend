@@ -12,9 +12,9 @@ from ..parsers import *
 
 class Methods:
     def __init__(self, app):
-        self.path = ''
+        self.path = app.root + ''
         
-        @app.get(self.path + '/search')
+        @app.get(self.path + 'search', tags=['general'])
         async def search(request: Request, q: str = None, type: Literal['any', 'item', 'list', 'user', 'post'] = 'any', x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             errors = []
             
@@ -34,7 +34,7 @@ class Methods:
                 return results
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
         
-        @app.get(self.path + '/autocomplete')
+        @app.get(self.path + 'autocomplete', tags=['general'])
         async def autocomplete(request: Request, q: str = None, type: Literal['any', 'item', 'list', 'user', 'post'] = 'any', x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             errors = []
             search = {}
@@ -44,3 +44,4 @@ class Methods:
             if type == 'any' or type == 'list':
                 search['lists'] = await ItemList.se
             return search
+        

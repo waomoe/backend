@@ -11,7 +11,7 @@ from ..database import *
 
 class Methods:
     def __init__(self, app):
-        self.path = '/account'
+        self.path = app.root + 'account/'
 
         class Account(BaseModel):
             email: str | None = None
@@ -38,7 +38,7 @@ class Methods:
             email: str | None = None
             api_tokens: str | None = None
 
-        @app.post(self.path + f"/auth/register")
+        @app.post(self.path + f"auth/register", tags=['auth'])
         @app.limit('10/hour')
         async def register(request: Request, account: Account, type: Literal['default', 'google', 'github', 'discord'] = 'default') -> JSONResponse:
             headers = dict(request.headers) 
@@ -102,13 +102,13 @@ class Methods:
                     errors.append('An error occurred...')
             return JSONResponse({'errors': errors}, status_code=400, headers=app.no_cache_headers)
         
-        @app.get(self.path + "/auth/oauth/{type}")
+        @app.get(self.path + "auth/oauth/{type}", tags=['auth'])
         async def oauthLogin(request: Request, type: Literal['default', 'google', 'github', 'discord'], code: str = None) -> JSONResponse:
             match type:
                 case 'google':
                     pass 
         
-        @app.post(self.path + f"/auth/login")
+        @app.post(self.path + f"auth/login", tags=['auth'])
         @app.limit('6/minute')
         async def login(request: Request, account: Account) -> JSONResponse:
             headers = dict(request.headers) 
@@ -133,7 +133,7 @@ class Methods:
                     "token": user.token if user.token else await User.generate_token(user.user_id)
                 }, status_code=201, headers=app.no_cache_headers)
        
-        @app.post(self.path + f"/auth/resetToken", dependencies=[Depends(app.checks.auth_required)])
+        @app.post(self.path + f"auth/resetToken", dependencies=[Depends(app.checks.auth_required)], tags=['auth'])
         async def resetToken(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:         
             user = await User.get(token=x_authorization)
             return JSONResponse({
@@ -143,7 +143,7 @@ class Methods:
                 }, status_code=201, headers=app.no_cache_headers
             )
             
-        @app.get(self.path + f'/auth/confirmEmail')
+        @app.get(self.path + f'auth/confirmEmail', tags=['auth'], include_in_schema=False)
         @app.limit('5/minute')
         async def confirmEmail(request: Request, key: str) -> JSONResponse:
             user = await User.get(email_confirm_key=key)
@@ -152,7 +152,7 @@ class Methods:
                 return JSONResponse({'message': 'Email confirmed successfully'}, status_code=200, headers=app.no_cache_headers)
             return JSONResponse({'message': 'Email confirmation failed'}, status_code=400, headers=app.no_cache_headers)
         
-        @app.get(self.path + f"/auth/getMe", dependencies=[Depends(app.checks.auth_required)])
+        @app.get(self.path + f"auth/getMe", dependencies=[Depends(app.checks.auth_required)], tags=['auth'])
         @app.limit('30/minute','3/second')
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
@@ -172,7 +172,7 @@ class Methods:
             )
         
         @app.limit('10/minute')
-        @app.post(self.path + f"/edit/editMe", dependencies=[Depends(app.checks.auth_required)])
+        @app.post(self.path + f"edit/editMe", dependencies=[Depends(app.checks.auth_required)], tags=['auth'])
         async def editMe(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccount) -> JSONResponse:
             errors = []
             
@@ -190,7 +190,7 @@ class Methods:
                     errors.append(str(exc))
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
                     
-        @app.post(self.path + f"/auth/editAuth", dependencies=[Depends(app.checks.auth_required)])
+        @app.post(self.path + f"auth/editAuth", dependencies=[Depends(app.checks.auth_required)], tags=['auth'])
         @app.limit('10/minute')
         async def editAuth(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccountAuth) -> JSONResponse:
             errors = []

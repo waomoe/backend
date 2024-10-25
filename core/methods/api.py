@@ -6,20 +6,20 @@ from ..database import *
 
 class Methods:
     def __init__(self, app):
-        self.path = ''
+        self.path = app.root
 
-        @app.get(self.path + '/', include_in_schema=False)
+        @app.get(self.path + '', include_in_schema=False)
         async def root(request: Request) -> RedirectResponse:
             return RedirectResponse('/docs')
         
-        @app.get(self.path + '/status')
+        @app.get(self.path + 'status', tags=['misc'])
         async def status(request: Request) -> JSONResponse:
             return JSONResponse(
                 {'status': 'ok', 'current_version': app.current_version, 'uptime': str(datetime.now() - app.start_at), "server_time": str(datetime.now())},
                 headers=app.no_cache_headers
             )
         
-        @app.get(self.path + '/database')
+        @app.get(self.path + 'database', tags=['misc'])
         @app.limit('5/minute')
         async def database(request: Request) -> JSONResponse:     
             await User.get_all(limit=500)
@@ -37,11 +37,11 @@ class Methods:
                     },
                 }, headers=app.no_cache_headers)
         
-        @app.get(self.path + '/version')
+        @app.get(self.path + 'version', tags=['misc'])
         async def version(request: Request) -> PlainTextResponse:
             return app.current_version
         
-        @app.get(self.path + '/github', include_in_schema=False)
+        @app.get(self.path + 'github', include_in_schema=False, tags=['misc'])
         async def github(request: Request) -> RedirectResponse:
             return RedirectResponse('https://github.com/waomoe')
         

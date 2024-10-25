@@ -12,17 +12,54 @@ from loguru._defaults import LOGURU_FORMAT
 from glob import glob
 from os.path import dirname, basename, isfile, join
 from asyncio import create_task, run
+import asyncio
 import logging
 import sys
 
+
+version = '1.0.2-dev'
+
+tags_metadata = [
+    {
+        "name": "dev",
+        "description": "Developer endpoints.",
+    },
+    {
+        "name": "auth",
+        "description": "Authentication endpoints.",  
+    },
+    {
+        "name": "users",
+        "description": "Manage user(s).",
+    },
+    {
+        "name": "general",
+        "description": "General api endpoints.",  
+    },
+    {
+        "name": "vn",
+        "description": "Visual novel engine API endpoints.",
+        "externalDocs": {
+            "description": "More info",
+            "url": "https://github.com/waomoe/visual-novel-engine",
+        },
+    },
+]
     
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(docs_url='/docs')
+app = FastAPI(
+    version=version,
+    title='WAO.MOE',
+    description='Open public API for wao.moe, visit https://github.com/waomoe/backend to discover more.',
+    openapi_url='/pubapi.json',
+    openapi_tags=tags_metadata
+)
 
-app.current_version = '1.0.2-dev'
+app.current_version = version
 app.start_at = datetime.now()
 app.url = 'https://dev.wao.moe' if 'dev' in app.current_version else "https://wao.moe"
 app.api_url = 'https://dev-api.wao.moe' if 'dev' in app.current_version else 'https://api.wao.moe'
+app.root = '/'
 
 app.email = Email()
 app.translator = Translator()
@@ -40,7 +77,7 @@ async def rechache_translations():
         app.logger.info('Chaching translations...')
         app.translator.chache_translations()
         app.logger.info('Re-cached translations')
-        sleep(60 * 10)
+        await asyncio.sleep(600)
 
 
 Thread(target=run, args=(rechache_translations(),)).start()
@@ -52,7 +89,7 @@ app.logger = logger
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://dev.wao.moe", "https://wao.moe", "https://dev-api.wao.moe", "https://api.wao.moe"],
+    allow_origins=[app.url, app.api_url],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -103,7 +140,7 @@ app.no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate", 
 
 
 @app.get('/favicon.ico', include_in_schema=False)
-@app.state.limiter.limit('2/minute')
+@app.state.limiter.limit('10/minute')
 async def favicon(request: Request):
     return FileResponse('./logo.png')
 
@@ -124,5 +161,5 @@ for module in __all__:
 app.setup_hook = create_task(setup_hook())
 app.logger.success(f'Started wao.moe backend v{app.current_version} in {datetime.now() - app.start_at}')
 app.setup_hook.add_done_callback(lambda x:
-    app.logger.info(f'\n\n\t\tWAO.MOE Backend [v{app.current_version}]\n\t\tAPI URL: {app.api_url}\n\t\tFrontend URL: {app.url}\n\t\tModules loaded: {len(__all__)}\n')
+    app.logger.info(f'\n\n\t\tWAO.MOE Backend v{app.current_version}\n\t\tAPI URL: {app.api_url}\n\t\tFrontend URL: {app.url}\n\t\tModules loaded: {len(__all__)}\n')
 )

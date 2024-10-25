@@ -21,10 +21,13 @@ from string import ascii_letters, digits
 from asyncio import create_task
 from .exceptions import *
 
-
-db_backup_folder = f'./backups/'
-engine = create_async_engine('sqlite+aiosqlite:///./waomoe.sqlite')
+ 
+load_dotenv()
+db_backup_folder = getenv('DB_BACKUP_FOLDER')
+engine = create_async_engine(f'sqlite+aiosqlite:///{getenv("DB_PATH")}', echo=getenv('DB_DEBUG') == 'true')
+vn_engine = create_async_engine(f'sqlite+aiosqlite:///{getenv("VN_DB_PATH")}', echo=getenv('DB_DEBUG') == 'true')
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+async_vn_session = sessionmaker(vn_engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
 
 
@@ -128,7 +131,7 @@ class User(Base):
         "email": 12, "about": 5, "location": 10, "gender": 9, "social": 11, "website_url": 13,
         "following": 14, "followers": 15, "subscribed": 16, "subscribers": 17, "theme": 18,
         "language": 19, "avatar_url": 20, "banner_url": 21, "active_at": 22
-    }
+    } 
     
     # Privacy key:
     privacy = Column(String, default=None)  # None = everything is friend only
@@ -155,6 +158,7 @@ class User(Base):
     # 21th - banner visibility (1 - public, 2 - friends only, 3 - private)
     # 22th - activity visibility (1 - public, 2 - friends only, 3 - private)
     # 23th = birthday details visibility (1 - year, 2 - month + day 3 - year & month + day)
+    # 24th = custom style visibility (1 - public, 2 - friends only, 3 - private)
     
     settings = Column(String, default=None)
     
@@ -190,7 +194,7 @@ class User(Base):
 
     async def get_privacy_settings(self):
         if self and self.privacy is None:
-            self.privacy = '2' * 23
+            self.privacy = '2' * 24
         privacy_dict = {}
         for key in self.__dict__.keys():
             if key in self.privacy_keys.keys():
@@ -709,10 +713,33 @@ class Item(Base):
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return items
     
+    
+class VisualNovel(Base):
+    __tablename__ = 'visual_novel'
+    
+    visual_novel_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
+    author_id = Column(Integer, default=None)
+    deleted = Column(Boolean, default=False)
+    hidden = Column(Boolean, default=False)
+    
+    name = Column(String, default=None)
+    description = Column(String, default=None)
+    kind = Column(String, default=None)
+    data = Column(JSON, default=None)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    edit_at = Column(DateTime(timezone=True), server_default=None)
+    update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    upvotes = Column(JSON, default=[])
+    downvotes = Column(JSON, default=[])
+    reactions = Column(JSON, default=[])
+    
 
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
+    async with vn_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 create_task(create_tables())
