@@ -22,4 +22,5 @@ async def setup_hook(*args, **kwargs) -> None:
 async def sheduled_backup() -> None:
     while True:
         await DatabaseBackups.backup_db()
+        print('Backing up database...') 
         await sleep(60 * 60 * 6)

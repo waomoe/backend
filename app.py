@@ -12,6 +12,7 @@ from loguru._defaults import LOGURU_FORMAT
 from glob import glob
 from os.path import dirname, basename, isfile, join
 from asyncio import create_task, run
+from subprocess import check_output
 import asyncio
 import logging
 import sys
@@ -55,6 +56,7 @@ app = FastAPI(
     openapi_tags=tags_metadata
 )
 
+app.commit = check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
 app.current_version = version
 app.start_at = datetime.now()
 app.url = 'https://dev.wao.moe' if 'dev' in app.current_version else "https://wao.moe"
@@ -161,5 +163,5 @@ for module in __all__:
 app.setup_hook = create_task(setup_hook())
 app.logger.success(f'Started wao.moe backend v{app.current_version} in {datetime.now() - app.start_at}')
 app.setup_hook.add_done_callback(lambda x:
-    app.logger.info(f'\n\n\t\tWAO.MOE Backend v{app.current_version}\n\t\tAPI URL: {app.api_url}\n\t\tFrontend URL: {app.url}\n\t\tModules loaded: {len(__all__)}\n')
+    app.logger.info(f'\n\n\t\tWAO.MOE Backend v{app.current_version}\n\t\tCommit #{app.commit}\n\t\tAPI URL: {app.api_url}\n\t\tFrontend URL: {app.url}\n\t\tModules loaded: {len(__all__)}\n')
 )

@@ -20,7 +20,7 @@ class Methods:
             )
         
         @app.get(self.path + 'database', tags=['misc'])
-        @app.limit('5/minute')
+        @app.limit('12/minute')
         async def database(request: Request) -> JSONResponse:     
             await User.get_all(limit=500)
             return JSONResponse(

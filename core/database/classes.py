@@ -23,11 +23,9 @@ from .exceptions import *
 
  
 load_dotenv()
-db_backup_folder = getenv('DB_BACKUP_FOLDER')
-engine = create_async_engine(f'sqlite+aiosqlite:///{getenv("DB_PATH")}', echo=getenv('DB_DEBUG') == 'true')
-vn_engine = create_async_engine(f'sqlite+aiosqlite:///{getenv("VN_DB_PATH")}', echo=getenv('DB_DEBUG') == 'true')
-async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-async_vn_session = sessionmaker(vn_engine, expire_on_commit=False, class_=AsyncSession)
+db_backup_folder = getenv('DB_FOLDER_PATH') + 'backups/'
+engines = {n : create_async_engine("sqlite+aiosqlite:///" + getenv('DB_FOLDER_PATH') + getenv(f'{n}_db_name'.upper())) for n in ['main', 'vn']}
+sessions = {k : sessionmaker(v, expire_on_commit=False, class_=AsyncSession) for k, v in engines.items()}
 Base = declarative_base()
 
 
@@ -55,35 +53,41 @@ class DatabaseBackups:
         pass
     
     @classmethod
-    async def backup_db(self):        
+    async def backup_db(self, which: str = None):        
         load_dotenv()
         CRYPT_KEY = getenv('DB_CRYPT_KEY')
         if not os.path.exists(db_backup_folder):
             os.mkdir(db_backup_folder)
-        files = os.listdir(db_backup_folder)
-        if len(files) > 4:
-            files.sort()
-            for f in files[:-4]:
-                os.remove(db_backup_folder + f)
-        with open('./waomoe.sqlite', 'rb') as f:
-            with open(db_backup_folder + f'crypted_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt', 'wb') as f2:
-                f2.write(Fernet(CRYPT_KEY.encode('utf-8')).encrypt(f.read()))
+        for db in ['main', 'vn']:
+            if which is not None and db != which:
+                continue
+            if os.path.exists(db_backup_folder + db) is False:
+                os.mkdir(db_backup_folder + db)
+            files = os.listdir(db_backup_folder + db)
+            if len(files) > 4:
+                files.sort()
+                for f in files[:-4]:
+                    os.remove(db_backup_folder + f)
+            with open(getenv(f'DB_FOLDER_PATH') + (f'{db}_' if db != 'main' else '') + 'waomoe.sqlite', 'rb') as f:
+                print(db_backup_folder + db + f'/crypted_{db}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt')
+                with open(db_backup_folder + db + f'/crypted_{db}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt', 'wb') as f2:
+                    f2.write(Fernet(CRYPT_KEY.encode('utf-8')).encrypt(f.read()))
 
     @classmethod
-    async def decrypt_db(self):
+    async def decrypt_db(self, db_path: str):
         load_dotenv()
         CRYPT_KEY = getenv('DB_CRYPT_KEY')
         files = os.listdir(db_backup_folder)
-        if len(files) == 0:
-            return
-        files.sort()
-        with open(db_backup_folder + files[-1], 'rb') as f:
-            with open('./decrypted-waomoe.sqlite', 'wb') as f2:
+        with open(db_path, 'rb') as f:
+            with open('./decrypted.sqlite', 'wb') as f2:
                 f2.write(Fernet(CRYPT_KEY.encode('utf-8')).decrypt(f.read()))
         
 
 class User(Base):
     __tablename__: str = 'users'
+    __table_args__ = {
+        'comment': 'main',
+    }
         
     user_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     email = Column(String, default=None, unique=True)
@@ -228,7 +232,7 @@ class User(Base):
             If user with given id, email or username already exists.
         """
         start_at = datetime.now()   
-        async with async_session() as session:
+        async with sessions['main']() as session:
             user = User(
                 **kwargs
             )
@@ -263,7 +267,7 @@ class User(Base):
             User object if found, None if not.
         """
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             user = (await session.execute(select(User).filter_by(**kwargs))).scalars().first()
             if user and user.following is None:
                 user.following = []
@@ -292,7 +296,7 @@ class User(Base):
             List of User objects if found, empty list if not or None if criteria is not valid.
         """
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             if limit is not None:
                 users = (await session.execute(select(User).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
             else:
@@ -330,7 +334,7 @@ class User(Base):
             If user with given username or email already exists.
         """
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             if user_id is None and cls.user_id is None:
                 raise UserNotInitialized(f'User was not initialized and user_id was not provided')
             if user_id is None:
@@ -423,7 +427,7 @@ class User(Base):
     @classmethod
     async def search(cls, *args, safe_search: bool = True) -> List[Self] | List[None] | None:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             users = []
             for arg in args:
                 if arg is None:
@@ -456,6 +460,9 @@ class User(Base):
 
 class Post(Base):
     __tablename__ = 'posts'
+    __table_args__ = {
+        'comment': 'main',
+    }
     
     post_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     parent_id = Column(Integer, default=None)
@@ -480,7 +487,7 @@ class Post(Base):
     @classmethod
     async def add(cls, **kwargs) -> Self:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             post = Post(**kwargs)
             session.add(post)
             await session.commit()
@@ -490,7 +497,7 @@ class Post(Base):
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             post = (await session.execute(select(Post).filter_by(**kwargs))).scalars().first()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return post
@@ -498,7 +505,7 @@ class Post(Base):
     @classmethod
     async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self] | List[None] | None:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             if limit is not None:
                 posts = session.query(Post).filter_by(**kwargs).limit(limit).offset(offset).all()
             else:
@@ -510,7 +517,7 @@ class Post(Base):
     @classmethod
     async def update(cls, post_id: int = None, **kwargs) -> Self:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             if post_id is None:
                 post_id = cls.post_id
             post = session.query(Post).filter_by(post_id=post_id).first()
@@ -527,7 +534,7 @@ class Post(Base):
     @classmethod
     async def search(cls, *args, safe_search: bool = True) -> List[Self]:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             posts = []
             for arg in args:
                 if arg is None:
@@ -549,6 +556,9 @@ class Post(Base):
 
 class ItemList(Base):
     __tablename__ = 'lists'
+    __table_args__ = {
+        'comment': 'main',
+    }
     
     list_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     parent_id = Column(Integer, default=None)
@@ -575,7 +585,7 @@ class ItemList(Base):
     @classmethod
     async def add(cls, **kwargs) -> Self:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             list = ItemList(**kwargs)
             session.add(list)
             await session.commit()
@@ -585,7 +595,7 @@ class ItemList(Base):
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             list = (await session.execute(select(ItemList).filter_by(**kwargs))).scalars().first()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return list
@@ -593,7 +603,7 @@ class ItemList(Base):
     @classmethod
     async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self] | List[None] | None:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             if limit is not None:
                 lists = (await session.execute(select(ItemList).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
             else:
@@ -604,7 +614,7 @@ class ItemList(Base):
     @classmethod
     async def update(cls, list_id: int = None, **kwargs) -> Self:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             if list_id is None:
                 list_id = cls.list_id
             list = session.query(ItemList).filter_by(list_id=list_id).first()
@@ -619,7 +629,7 @@ class ItemList(Base):
     @classmethod
     async def search(cls, safe_search: bool = True, *args) -> List[Self] | List[None] | None:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             lists = []
             for arg in args:
                 if arg is None:
@@ -636,6 +646,10 @@ class ItemList(Base):
 
 class Item(Base):
     __tablename__ = 'items'
+    __table_args__ = {
+        'comment': 'main'
+    }
+    
 
     item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     mal_id = Column(Integer, default=None)
@@ -654,7 +668,7 @@ class Item(Base):
     @classmethod
     async def add(cls, **kwargs) -> Self:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             item = Item(**kwargs)
             session.add(item)
             await session.commit()
@@ -664,7 +678,7 @@ class Item(Base):
     @classmethod
     async def get(cls, **kwargs) -> Self | None:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             item = (await session.execute(select(Item).filter_by(**kwargs))).scalars().first()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return item
@@ -672,7 +686,7 @@ class Item(Base):
     @classmethod
     async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self] | List[None] | None:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             if limit is not None:
                 items = (await session.execute(select(Item).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
             else:
@@ -683,7 +697,7 @@ class Item(Base):
     @classmethod
     async def update(cls, item_id: int = None, mal_id: int = None, **kwargs) -> Self:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             if mal_id is not None:
                 item = (await session.execute(select(Item).filter_by(mal_id=mal_id))).scalars().first()
             else:
@@ -701,7 +715,7 @@ class Item(Base):
     @classmethod
     async def search(cls, *args) -> List[Self]:
         start_at = datetime.now()
-        async with async_session() as session:
+        async with sessions['main']() as session:
             items = []
             for arg in args:
                 if arg is None:
@@ -716,6 +730,9 @@ class Item(Base):
     
 class VisualNovel(Base):
     __tablename__ = 'visual_novel'
+    __table_args__ = {
+        'comment': 'vn',
+    }
     
     visual_novel_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     author_id = Column(Integer, default=None)
@@ -737,9 +754,15 @@ class VisualNovel(Base):
     
 
 async def create_tables():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with vn_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
+    for name, engine in engines.items():
+        # check if folder exists
+        if not os.path.exists(f'./databases/'):
+            os.mkdir(f'./databases')
+        async with engine.begin() as conn:
+            for table in Base.metadata.sorted_tables:
+                if table.comment != name:
+                    continue
+                await conn.run_sync(table.create, checkfirst=True)
+                    
+                    
 create_task(create_tables())
