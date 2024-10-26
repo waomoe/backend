@@ -34,6 +34,10 @@ tags_metadata = [
         "description": "Manage user(s).",
     },
     {
+        "name": "posts",
+        "description": "Posts endpoints.",  
+    },
+    {
         "name": "general",
         "description": "General api endpoints.",  
     },

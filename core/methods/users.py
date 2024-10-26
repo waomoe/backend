@@ -13,8 +13,9 @@ class Methods:
     def __init__(self, app):
         self.path = app.root + 'users/'
         
-        @app.post(self.path + 'getUser', tags=['users'])
+        @app.post(self.path + 'get', tags=['users'])
         async def getUser(request: Request, user_id: int, x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
+            
             errors = []
             
             user = None
@@ -39,4 +40,3 @@ class Methods:
                     target.privacy
                     return {key: getattr(target, key) for key in keys}
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
-        

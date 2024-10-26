@@ -14,10 +14,15 @@ class Methods:
         async def test(request: Request, q: str = None) -> JSONResponse:
             return await User.search(q)
 
-        @app.get(self.path + 'stressTestDatabase', tags=['dev'])
-        async def stressTestDatabase(request: Request, user_count: int = 1000) -> JSONResponse:
-            for i in range(user_count):
-                await User.add(username=f'test_{i}', password=''.join(choice(ascii_letters + digits) for _ in range(32)))
+        @app.get(self.path + 'createDummyData', tags=['dev'])
+        async def stressTestDatabase(request: Request, howMuch: int = 1000, type: Literal['item', 'user', 'post'] = 'user') -> JSONResponse:
+            for i in range(howMuch):
+                if type == 'item':
+                    await Item.add(mal_id=i, kind=choice(['anime', 'manga']))
+                if type == 'user':
+                    await User.add(username=f'test_{i}', password=''.join(choice(ascii_letters + digits) for _ in range(32)))
+                if type == 'post':
+                    await Post.add(title=f'post_{i}', content=''.join(choice(ascii_letters + digits) for _ in range(256)), author_id=1)
             return JSONResponse({'status': 'ok'})
         
         @app.get(self.path + 'parseItem', tags=['dev'])

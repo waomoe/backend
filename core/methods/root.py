@@ -42,6 +42,6 @@ class Methods:
                 response = await ShikimoriAPI().autocomplete(q)
                 search['animes'], search['mangas'] = response['animes'], response['mangas']
             if type == 'any' or type == 'list':
-                search['lists'] = await ItemList.se
-            return search
+                search['lists'] = await ItemList.search(True, q)
+            return search                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
         

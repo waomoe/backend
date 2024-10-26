@@ -92,7 +92,7 @@ class User(Base):
     user_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     email = Column(String, default=None, unique=True)
     username = Column(String, default=None, unique=True)
-    aliases = Column(JSON, default=None)
+    aliases = Column(JSON, default=[])
     name = Column(String, default=None)
     password = Column(String, default=None)
     token = Column(String, default=None, unique=True)
@@ -540,6 +540,7 @@ class Post(Base):
                 if arg is None:
                     continue
                 posts.extend((await session.execute(select(Post).where(Post.post_id.ilike(f'%{arg}%')))).scalars().all())
+                posts.extend((await session.execute(select(Post).where(Post.title.ilike(f'%{arg}%')))).scalars().all())
                 posts.extend((await session.execute(select(Post).where(Post.content.ilike(f'%{arg}%')))).scalars().all())
                 posts.extend((await session.execute(select(Post).where(Post.tags.ilike(f'%{arg}%')))).scalars().all())
                 posts.extend((await session.execute(select(Post).where(Post.author_id.ilike(f'%{arg}%')))).scalars().all())
@@ -627,7 +628,7 @@ class ItemList(Base):
         return await cls.get(list_id=list.list_id)
 
     @classmethod
-    async def search(cls, safe_search: bool = True, *args) -> List[Self] | List[None] | None:
+    async def search(cls, *args, safe_search: bool = True) -> List[Self] | List[None] | None:
         start_at = datetime.now()
         async with sessions['main']() as session:
             lists = []
@@ -643,6 +644,10 @@ class ItemList(Base):
             lists = [list for list in lists if not list.deleted and not list.hidden]
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return lists
+    
+    def __repr__(self) -> str:
+        return f'<ItemList #{self.list_id} [{self.author_id}]>'
+    
 
 class Item(Base):
     __tablename__ = 'items'
@@ -663,7 +668,7 @@ class Item(Base):
     
     ratings = Column(JSON, default=None)
     upvotes = Column(JSON, default=[])
-    downvotes = Column(JSON, default=[])
+    downvotes = Column(JSON, default=[])    
 
     deleted = Column(Boolean, default=False)
 
@@ -729,9 +734,12 @@ class Item(Base):
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return items
     
+    def __repr__(self) -> str:
+        return f'<Item #{self.item_id} [{self.author_id}]>'
+    
     
 class WebVisualNovel(Base):
-    __tablename__ = 'vns'
+    __tablename__ = 'visual_novels'
     __table_args__ = {
         'comment': 'vn',
     }
@@ -742,7 +750,7 @@ class WebVisualNovel(Base):
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
     
-    alias = Column(String, default=None)
+    aliases = Column(JSON, default=[])
     
     name = Column(String, default=None)
     description = Column(String, default=None)
@@ -816,7 +824,7 @@ class WebVisualNovel(Base):
         return await cls.get(visual_novel_id=item.visual_novel_id)
 
     @classmethod
-    async def search(cls, *args) -> List[Self]:
+    async def search(cls, *args, safe_search: bool = True) -> List[Self]:
         start_at = datetime.now()
         async with sessions['vn']() as session:
             items = []
@@ -824,9 +832,12 @@ class WebVisualNovel(Base):
                 items.extend((await session.execute(select(WebVisualNovel).where(WebVisualNovel.unic_id.ilike(f'%{arg}%')))).scalars().all())
                 items.extend((await session.execute(select(WebVisualNovel).where(WebVisualNovel.name.ilike(f'%{arg}%')))).scalars().all())
                 items.extend((await session.execute(select(WebVisualNovel).where(WebVisualNovel.description.ilike(f'%{arg}%')))).scalars().all())
-        session.expunge_all()
+            session.expunge_all()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return items 
+
+    def __repr__(self) -> str:
+        return f'<WebVisualNovel #{self.visual_novel_id} [{self.author_id}]>'
 
 
 async def create_tables():
