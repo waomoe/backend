@@ -467,7 +467,7 @@ class Post(Base):
     post_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     parent_id = Column(Integer, default=None)
     author_id = Column(Integer, default=None)
-    kind = Column(String, default=None)
+    kind = Column(String, default=None)  # probably something like 'comment', 'review', 'forum'
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
     
@@ -665,6 +665,8 @@ class Item(Base):
     upvotes = Column(JSON, default=[])
     downvotes = Column(JSON, default=[])
 
+    deleted = Column(Boolean, default=False)
+
     @classmethod
     async def add(cls, **kwargs) -> Self:
         start_at = datetime.now()
@@ -728,21 +730,27 @@ class Item(Base):
         return items
     
     
-class VisualNovel(Base):
-    __tablename__ = 'visual_novel'
+class WebVisualNovel(Base):
+    __tablename__ = 'vns'
     __table_args__ = {
         'comment': 'vn',
     }
     
     visual_novel_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     author_id = Column(Integer, default=None)
+    unic_id = Column(String, unique=True, nullable=False)
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
+    
+    alias = Column(String, default=None)
     
     name = Column(String, default=None)
     description = Column(String, default=None)
     kind = Column(String, default=None)
     data = Column(JSON, default=None)
+    status = Column(String, default=None)
+    version = Column(String, default=None)
+    screenshots = Column(JSON, default=[])
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     edit_at = Column(DateTime(timezone=True), server_default=None)
@@ -752,10 +760,77 @@ class VisualNovel(Base):
     downvotes = Column(JSON, default=[])
     reactions = Column(JSON, default=[])
     
+    views = Column(Integer, default=0)
+    
+    max_text_size_mb = Column(Integer, default=12)
+    sprite_max_size_mb = Column(Integer, default=16)
+    sound_max_size_mb = Column(Integer, default=16)
+    conf_file_max_size_mb = Column(Integer, default=16)
+    conf_files = Column(JSON, default={})
+    text_files = Column(JSON, default={})
+    sprite_files = Column(JSON, default={})
+    sound_files = Column(JSON, default={})
+        
+    @classmethod
+    async def add(cls, **kwargs) -> Self | None:
+        start_at = datetime.now()
+        async with sessions['vn']() as session:
+            item = (await session.execute(select(WebVisualNovel).filter_by(**kwargs))).scalars().first()
+            if item.unic_id is None:
+                item.unic_id = str(str(uuid4()).upper()[-12:])
+                session.add(item)
+                await session.commit()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return item
+    
+    @classmethod
+    async def get(cls, **kwargs) -> Self:
+        start_at = datetime.now()
+        async with sessions['vn']() as session:
+            item = (await session.execute(select(WebVisualNovel).filter_by(**kwargs))).scalars().first()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return item
+    
+    @classmethod
+    async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self]:
+        start_at = datetime.now()
+        async with sessions['vn']() as session:
+            if limit is not None:
+                items = (await session.execute(select(WebVisualNovel).filter_by(**kwargs).limit(limit).offset(offset))).scalars().all()
+            else:
+                items = (await session.execute(select(WebVisualNovel).filter_by(**kwargs))).scalars().all()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return items
+        
+    @classmethod
+    async def update(cls, item_id: int, **kwargs) -> Self:
+        start_at = datetime.now()
+        async with sessions['vn']() as session:
+            item = (await session.execute(select(WebVisualNovel).filter_by(visual_novel_id=item_id))).scalars().first()
+            if item is None:
+                raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
+            for key, value in kwargs.items():
+                setattr(item, key, value)
+            await session.commit()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(visual_novel_id=item.visual_novel_id)
+
+    @classmethod
+    async def search(cls, *args) -> List[Self]:
+        start_at = datetime.now()
+        async with sessions['vn']() as session:
+            items = []
+            for arg in args:
+                items.extend((await session.execute(select(WebVisualNovel).where(WebVisualNovel.unic_id.ilike(f'%{arg}%')))).scalars().all())
+                items.extend((await session.execute(select(WebVisualNovel).where(WebVisualNovel.name.ilike(f'%{arg}%')))).scalars().all())
+                items.extend((await session.execute(select(WebVisualNovel).where(WebVisualNovel.description.ilike(f'%{arg}%')))).scalars().all())
+        session.expunge_all()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return items 
+
 
 async def create_tables():
     for name, engine in engines.items():
-        # check if folder exists
         if not os.path.exists(f'./databases/'):
             os.mkdir(f'./databases')
         async with engine.begin() as conn:
