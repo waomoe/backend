@@ -1,5 +1,5 @@
 from fastapi import Header, Request, HTTPException, APIRouter
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, PlainTextResponse, Response
 from datetime import datetime
 from ..database import *
 
@@ -8,9 +8,16 @@ class Methods:
     def __init__(self, app):
         self.path = app.root
 
-        @app.get(self.path + '', include_in_schema=False)
-        async def root(request: Request) -> RedirectResponse:
+        @app.get(self.path, include_in_schema=False)
+        async def root(request: Request, *args, **kwargs):
+            app.logger.info(request.url)
+            if request.url.startwith(app.cdn_url):
+                return await cdn_get(request, request.url.replace(app.cdn_url, ''))
             return RedirectResponse('/docs')
+        
+        @app.get(self.path + 'cdn/{key}', tags=['cdn'])
+        async def cdn_get(request: Request, key: str):
+            return key
         
         @app.get(self.path + 'status', tags=['misc'])
         async def status(request: Request) -> JSONResponse:

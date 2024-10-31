@@ -24,31 +24,29 @@ tags_metadata = [
     {
         "name": "dev",
         "description": "Developer endpoints.",
-    },
-    {
+    }, {
         "name": "auth",
         "description": "Authentication endpoints.",  
-    },
-    {
+    }, {
         "name": "users",
         "description": "Manage user(s).",
-    },
-    {
+    }, {
         "name": "posts",
         "description": "Posts endpoints.",  
-    },
-    {
+    }, {
         "name": "general",
         "description": "General api endpoints.",  
-    },
-    {
+    }, {
         "name": "vn",
         "description": "Visual novel engine API endpoints.",
         "externalDocs": {
             "description": "More info",
             "url": "https://github.com/waomoe/visual-novel-engine",
         },
-    },
+    }, {
+        "name": "cdn",
+        "description": "CDN endpoints.",
+    }
 ]
     
 limiter = Limiter(key_func=get_remote_address)
@@ -57,7 +55,7 @@ app = FastAPI(
     title='WAO.MOE',
     description='Open public API for wao.moe, visit https://github.com/waomoe/backend to discover more.',
     openapi_url='/pubapi.json',
-    openapi_tags=tags_metadata
+    openapi_tags=tags_metadata,
 )
 
 app.commit = check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
@@ -65,7 +63,9 @@ app.current_version = version
 app.start_at = datetime.now()
 app.url = 'https://dev.wao.moe' if 'dev' in app.current_version else "https://wao.moe"
 app.api_url = 'https://dev-api.wao.moe' if 'dev' in app.current_version else 'https://api.wao.moe'
+app.cdn_url = 'https://dev-i.wao.moe' if 'dev' in app.current_version else 'https://i.wao.moe'
 app.root = '/'
+
 
 app.email = Email()
 app.translator = Translator()

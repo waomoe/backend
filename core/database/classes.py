@@ -1,3 +1,5 @@
+import base64
+import os
 from sqlalchemy import Column, Integer, String, Boolean, Float, JSON, DateTime, func, BINARY, Identity
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -6,8 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from datetime import datetime, timezone
 from typing import Self, List
 from uuid import uuid4
-import base64
-import os
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -24,7 +24,7 @@ from .exceptions import *
  
 load_dotenv()
 db_backup_folder = getenv('DB_FOLDER_PATH') + 'backups/'
-engines = {n : create_async_engine("sqlite+aiosqlite:///" + getenv('DB_FOLDER_PATH') + getenv(f'{n}_db_name'.upper())) for n in ['main', 'vn']}
+engines = {n : create_async_engine("sqlite+aiosqlite:///" + getenv('DB_FOLDER_PATH') + getenv(f'{n}_db_name'.upper())) for n in ['main', 'vn', 'cdn']}
 sessions = {k : sessionmaker(v, expire_on_commit=False, class_=AsyncSession) for k, v in engines.items()}
 Base = declarative_base()
 
@@ -476,7 +476,6 @@ class Post(Base):
     tags = Column(JSON, default=None)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    data_refresh_at = Column(DateTime(timezone=True), server_default=None)
     update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     upvotes = Column(JSON, default=None)
@@ -661,6 +660,8 @@ class Item(Base):
     kind = Column(String, default=None)
     
     shiki_data = Column(JSON, default=None)
+    custom_data = Column(JSON, default=None)
+    edited_at = Column(DateTime(timezone=True), default=None)
     data_refresh = Column(DateTime(timezone=True), default=None)
     
     favorited_by = Column(JSON, default=[])
@@ -838,6 +839,77 @@ class WebVisualNovel(Base):
 
     def __repr__(self) -> str:
         return f'<WebVisualNovel #{self.visual_novel_id} [{self.author_id}]>'
+
+
+class CDNItem(Base):
+    __tablename__ = 'cdn_items'
+    __table_args__ = {
+        'comment': 'cdn'
+    }
+
+    item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
+    key = Column(String, nullable=False)
+    short_key = Column(String, default=None)
+    deleted = Column(Boolean, default=None)
+    
+    name = Column(String, default=None)
+    direct_url = Column(String, default=None)
+    
+    created_by = Column(Integer, default=None)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_view_at = Column(DateTime(timezone=True), server_default=None)
+    delete_at = Column(DateTime(timezone=True), server_default=None)
+    
+    type = Column(String, default=None)
+    size_kb = Column(Integer, default=None)
+    
+    views = Column(Integer, default=0)
+    
+    @classmethod
+    async def add(cls, **kwargs) -> Self | None:
+        start_at = datetime.now()
+        async with sessions['cdn']() as session:
+            item = CDNItem(**kwargs)
+            while item.key is None:
+                key = str(uuid4()).replace('-', '')
+                if await cls.get(key=key) is None:
+                    item.key = key
+            session.add(item)
+            await session.commit()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return item
+    
+    @classmethod
+    async def get(cls, **kwargs) -> Self | None:
+        start_at = datetime.now()
+        async with sessions['cdn']() as session:
+            item = (await session.execute(select(CDNItem).filter_by(**kwargs))).scalars().first()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return item
+        
+    @classmethod
+    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
+        start_at = datetime.now()
+        async with sessions['cdn']() as session:
+            items = (await session.execute(select(CDNItem).filter_by(**kwargs))).scalars().all()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return items
+
+    @classmethod
+    async def update(cls, item_id: int, **kwargs) -> Self:
+        start_at = datetime.now()
+        async with sessions['cdn']() as session:
+            item = (await session.execute(select(CDNItem).filter_by(item_id=item_id))).scalars().first()
+            if item is None:
+                raise ItemNotFound(f'Item with id {item_id} wasn\'t found')
+            for key, value in kwargs.items():
+                setattr(item, key, value)
+            await session.commit()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(item_id=item.item_id)
+    
+    def __repr__(self) -> str:
+        return f'<CDNItem #{self.item_id} ("/{self.key}' + (f'", "/{self.short_key}")' if self.short_key else '")') + '>'
 
 
 async def create_tables():

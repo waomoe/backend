@@ -20,7 +20,7 @@ class Methods:
                 if type == 'item':
                     await Item.add(mal_id=i, kind=choice(['anime', 'manga']))
                 if type == 'user':
-                    await User.add(username=f'test_{i}', password=''.join(choice(ascii_letters + digits) for _ in range(32)))
+                    await User.add(username=f'{choice(ascii_letters + digits)}test_{i}', password=''.join(choice(ascii_letters + digits) for _ in range(32)))
                 if type == 'post':
                     await Post.add(title=f'post_{i}', content=''.join(choice(ascii_letters + digits) for _ in range(256)), author_id=1)
             return JSONResponse({'status': 'ok'})
