@@ -25,7 +25,7 @@ from .exceptions import *
 load_dotenv()
 db_backup_folder = getenv('DB_FOLDER_PATH') + 'backups/'
 engines = {n : create_async_engine("sqlite+aiosqlite:///" + getenv('DB_FOLDER_PATH') + getenv(f'{n}_db_name'.upper())) for n in ['main', 'vn', 'cdn']}
-sessions = {k : sessionmaker(v, expire_on_commit=False, class_=AsyncSession) for k, v in engines.items()}
+sessions = {k : sessionmaker(v, expire_on_commit=True, class_=AsyncSession) for k, v in engines.items()}
 Base = declarative_base()
 
 
@@ -77,7 +77,7 @@ class DatabaseBackups:
     async def decrypt_db(self, db_path: str):
         load_dotenv()
         CRYPT_KEY = getenv('DB_CRYPT_KEY')
-        files = os.listdir(db_backup_folder)
+        # files = os.listdir(db_backup_folder)
         with open(db_path, 'rb') as f:
             with open('./decrypted.sqlite', 'wb') as f2:
                 f2.write(Fernet(CRYPT_KEY.encode('utf-8')).decrypt(f.read()))
@@ -90,46 +90,47 @@ class User(Base):
     }
         
     user_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
-    email = Column(String, default=None, unique=True)
-    username = Column(String, default=None, unique=True)
+    email = Column(String, unique=True)
+    username = Column(String, unique=True)
     aliases = Column(JSON, default=[])
-    name = Column(String, default=None)
-    password = Column(String, default=None)
-    token = Column(String, default=None, unique=True)
-    two_factor = Column(String, default=None)
+    name = Column(String)
+    password = Column(String)
+    token = Column(String, unique=True)
+    two_factor = Column(String)
     hidden = Column(Boolean, default=False)
-    oauth = Column(JSON, default=None)
-    api_tokens = Column(JSON, default=None)
+    oauth = Column(JSON)
+    api_tokens = Column(JSON)
     
-    avatar_url = Column(String, default=None)
-    banner_url = Column(String, default=None)
-    avatar_decoration = Column(String, default=None)
-    profile_decoration = Column(String, default=None)
-    website_url = Column(String, default=None)
-    bio = Column(String, default=None)
-    status = Column(String, default=None)
-    location = Column(String, default=None)
-    about = Column(String, default=None)
-    birthday = Column(DateTime(timezone=True), default=None)
-    gender = Column(String, default=None)
-    social = Column(JSON, default=None)
-    birthday = Column(DateTime(timezone=True), default=None)
+    avatar_url = Column(String)
+    banner_url = Column(String)
+    avatar_decoration = Column(String)
+    profile_decoration = Column(String)
+    website_url = Column(String)
+    bio = Column(String)
+    status = Column(String)
+    location = Column(String)
+    about = Column(String)
+    birthday = Column(DateTime(timezone=True))
+    gender = Column(String)
+    social = Column(JSON)
+    birthday = Column(DateTime(timezone=True))
+    badges = Column(JSON)
       
     created_at = Column(DateTime(timezone=True), default=func.now())
     active_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     
-    banned_until = Column(DateTime(timezone=True), default=None)
-    banned_reason = Column(String, default=None)
-    muted_until = Column(DateTime(timezone=True), default=None)
-    muted_reason = Column(String, default=None)
-    mod_logs = Column(JSON, default=None)
+    banned_until = Column(DateTime(timezone=True))
+    banned_reason = Column(String)
+    muted_until = Column(DateTime(timezone=True))
+    muted_reason = Column(String)
+    mod_logs = Column(JSON)
     
-    email_confirm_key = Column(String, default=None)
-    email_confirmed_at = Column(DateTime(timezone=True), default=None)
+    email_confirm_key = Column(String)
+    email_confirmed_at = Column(DateTime(timezone=True))
     
     language = Column(String, default='en')
-    theme = Column(String, default=None)
+    theme = Column(String)
     
     privacy_keys = {
         "email": 12, "about": 5, "location": 10, "gender": 9, "social": 11, "website_url": 13,
@@ -138,7 +139,7 @@ class User(Base):
     } 
     
     # Privacy key:
-    privacy = Column(String, default=None)  # None = everything is friend only
+    privacy = Column(String)  # None = everything is friend only
     # 1st num - User profile visibility (1 - public, 2 - friends only, 3 - private)
     # 2nd - Posts visibility (1 - public, 2 - friends only, 3 - private)
     # 3rd - Lists visibility (1 - public, 2 - friends only, 3 - private)
@@ -164,30 +165,33 @@ class User(Base):
     # 23th = birthday details visibility (1 - year, 2 - month + day 3 - year & month + day)
     # 24th = custom style visibility (1 - public, 2 - friends only, 3 - private)
     
-    settings = Column(String, default=None)
+    settings = Column(JSON)
     
-    group = Column(String, default=None)
+    group = Column(String)
     
-    plus_active_until = Column(DateTime(timezone=True), default=None)
-    transactions = Column(JSON, default=None)
+    plus_active_until = Column(DateTime(timezone=True))
+    transactions = Column(JSON)
     
-    trackers = Column(JSON, default=None)
+    trackers = Column(JSON)
     
-    closed_interactions = Column(JSON, default=None)    
+    closed_interactions = Column(JSON)    
 
-    following = Column(JSON, default=None)
-    followers = Column(JSON, default=None)
-    subscribed = Column(JSON, default=None)
-    subscribers = Column(JSON, default=None)
-    blocked_users = Column(JSON, default=None)
+    following = Column(JSON)
+    followers = Column(JSON)
+    subscribed = Column(JSON)
+    subscribers = Column(JSON)
+    blocked_users = Column(JSON)
     
-    custom_styles = Column(JSON, default=None)
+    custom_styles = Column(JSON)
 
-    sessions = Column(JSON, default=None)
-    reg_ip = Column(String, default=None)
-    reg_type = Column(String, default=None)
-    last_ip = Column(String, default=None)
-    ip_history = Column(JSON, default=None)
+    sessions = Column(JSON)
+    reg_ip = Column(String)
+    reg_type = Column(String)
+    last_ip = Column(String)
+    ip_history = Column(JSON)
+    
+    change_logs = Column(JSON)
+    data = Column(JSON)
     
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
@@ -465,23 +469,23 @@ class Post(Base):
     }
     
     post_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
-    parent_id = Column(Integer, default=None)
-    author_id = Column(Integer, default=None)
-    kind = Column(String, default=None)  # probably something like 'comment', 'review', 'forum'
+    parent_id = Column(Integer)
+    author_id = Column(Integer)
+    kind = Column(String)  # probably something like 'comment', 'review', 'forum'
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
     
-    title = Column(String, default=None)
-    content = Column(String, default=None)
-    tags = Column(JSON, default=None)
+    title = Column(String)
+    content = Column(String)
+    tags = Column(JSON)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     update_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    upvotes = Column(JSON, default=None)
-    downvotes = Column(JSON, default=None)
-    reactions = Column(JSON, default=None)
-    views = Column(JSON, default=None)
+    upvotes = Column(JSON)
+    downvotes = Column(JSON)
+    reactions = Column(JSON)
+    views = Column(JSON)
 
     @classmethod
     async def add(cls, **kwargs) -> Self:
@@ -561,16 +565,16 @@ class ItemList(Base):
     }
     
     list_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
-    parent_id = Column(Integer, default=None)
-    author_id = Column(Integer, default=None)
+    parent_id = Column(Integer)
+    author_id = Column(Integer)
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
-    uniq_id = Column(String, default=None, unique=True)
+    uniq_id = Column(String, unique=True)
     
-    name = Column(String, default=None)
-    description = Column(String, default=None)
-    kind = Column(String, default=None)
-    items = Column(JSON, default=None)
+    name = Column(String)
+    description = Column(String)
+    kind = Column(String)
+    items = Column(JSON)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     edit_at = Column(DateTime(timezone=True), server_default=None)
@@ -656,18 +660,18 @@ class Item(Base):
     
 
     item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
-    mal_id = Column(Integer, default=None)
-    kind = Column(String, default=None)
+    mal_id = Column(Integer)
+    kind = Column(String)
     
-    shiki_data = Column(JSON, default=None)
-    custom_data = Column(JSON, default=None)
-    edited_at = Column(DateTime(timezone=True), default=None)
-    data_refresh = Column(DateTime(timezone=True), default=None)
+    shiki_data = Column(JSON)
+    custom_data = Column(JSON)
+    edited_at = Column(DateTime(timezone=True))
+    data_refresh = Column(DateTime(timezone=True))
     
     favorited_by = Column(JSON, default=[])
     in_lists = Column(JSON, default=[])
     
-    ratings = Column(JSON, default=None)
+    ratings = Column(JSON)
     upvotes = Column(JSON, default=[])
     downvotes = Column(JSON, default=[])    
 
@@ -746,19 +750,19 @@ class WebVisualNovel(Base):
     }
     
     visual_novel_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
-    author_id = Column(Integer, default=None)
+    author_id = Column(Integer)
     unic_id = Column(String, unique=True, nullable=False)
     deleted = Column(Boolean, default=False)
     hidden = Column(Boolean, default=False)
     
     aliases = Column(JSON, default=[])
     
-    name = Column(String, default=None)
-    description = Column(String, default=None)
-    kind = Column(String, default=None)
-    data = Column(JSON, default=None)
-    status = Column(String, default=None)
-    version = Column(String, default=None)
+    name = Column(String)
+    description = Column(String)
+    kind = Column(String)
+    data = Column(JSON)
+    status = Column(String)
+    version = Column(String)
     screenshots = Column(JSON, default=[])
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -849,19 +853,19 @@ class CDNItem(Base):
 
     item_id = Column(Integer, Identity(start=1, increment=1), primary_key=True, unique=True)
     key = Column(String, nullable=False)
-    short_key = Column(String, default=None)
-    deleted = Column(Boolean, default=None)
+    short_key = Column(String)
+    deleted = Column(Boolean)
     
-    name = Column(String, default=None)
-    direct_url = Column(String, default=None)
+    name = Column(String)
+    direct_url = Column(String)
     
-    created_by = Column(Integer, default=None)
+    created_by = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_view_at = Column(DateTime(timezone=True), server_default=None)
     delete_at = Column(DateTime(timezone=True), server_default=None)
     
-    type = Column(String, default=None)
-    size_kb = Column(Integer, default=None)
+    type = Column(String)
+    size_kb = Column(Integer)
     
     views = Column(Integer, default=0)
     

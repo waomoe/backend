@@ -63,7 +63,7 @@ app.current_version = version
 app.start_at = datetime.now()
 app.url = 'https://dev.wao.moe' if 'dev' in app.current_version else "https://wao.moe"
 app.api_url = 'https://dev-api.wao.moe' if 'dev' in app.current_version else 'https://api.wao.moe'
-app.cdn_url = 'https://dev-i.wao.moe' if 'dev' in app.current_version else 'https://i.wao.moe'
+app.cdn_url = 'https://dev-cdn.wao.moe' if 'dev' in app.current_version else 'https://cdn.wao.moe'
 app.root = '/'
 
 

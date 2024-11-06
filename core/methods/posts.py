@@ -8,13 +8,15 @@ from string import ascii_letters, digits
 from random import choice
 from ..database import *
 from ..parsers import *
+from ..other import track_usage
 
 
 class Methods:
     def __init__(self, app):
         self.path = app.root + 'posts/'
-        
+    
         @app.get(self.path + 'search', tags=['posts'])
+        @track_usage
         async def searchPost(request: Request, q: str, kind: Literal['any', 'thread', 'comment', 'review'] = 'thread', x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             user = None
             if x_authorization is not None:

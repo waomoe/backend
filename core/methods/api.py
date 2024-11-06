@@ -2,6 +2,7 @@ from fastapi import Header, Request, HTTPException, APIRouter
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, PlainTextResponse, Response
 from datetime import datetime
 from ..database import *
+from ..other import track_usage
 
 
 class Methods:
@@ -9,6 +10,7 @@ class Methods:
         self.path = app.root
 
         @app.get(self.path, include_in_schema=False)
+        @track_usage
         async def root(request: Request, *args, **kwargs):
             app.logger.info(request.url)
             if request.url.startwith(app.cdn_url):
@@ -16,10 +18,12 @@ class Methods:
             return RedirectResponse('/docs')
         
         @app.get(self.path + 'cdn/{key}', tags=['cdn'])
+        @track_usage
         async def cdn_get(request: Request, key: str):
             return key
         
         @app.get(self.path + 'status', tags=['misc'])
+        @track_usage
         async def status(request: Request) -> JSONResponse:
             return JSONResponse(
                 {'status': 'ok', 'current_version': app.current_version, 'uptime': str(datetime.now() - app.start_at), "server_time": str(datetime.now())},
@@ -28,6 +32,7 @@ class Methods:
         
         @app.get(self.path + 'database', tags=['misc'])
         @app.limit('12/minute')
+        @track_usage
         async def database(request: Request) -> JSONResponse:     
             await User.get_all(limit=500)
             return JSONResponse(
@@ -45,10 +50,12 @@ class Methods:
                 }, headers=app.no_cache_headers)
         
         @app.get(self.path + 'version', tags=['misc'])
+        @track_usage
         async def version(request: Request) -> PlainTextResponse:
             return app.current_version
         
         @app.get(self.path + 'github', include_in_schema=False, tags=['misc'])
+        @track_usage
         async def github(request: Request) -> RedirectResponse:
             return RedirectResponse('https://github.com/waomoe')
         

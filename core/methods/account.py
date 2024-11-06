@@ -7,6 +7,7 @@ from re import match
 from string import ascii_letters, digits
 from random import choice
 from ..database import *
+from ..other import track_usage
 
 
 class Methods:
@@ -40,6 +41,7 @@ class Methods:
 
         @app.post(self.path + f"auth/register", tags=['auth'])
         @app.limit('10/hour')
+        @track_usage
         async def register(request: Request, account: Account, type: Literal['default', 'google', 'github', 'discord'] = 'default') -> JSONResponse:
             headers = dict(request.headers) 
             errors = []
@@ -110,6 +112,7 @@ class Methods:
         
         @app.post(self.path + f"auth/login", tags=['auth'])
         @app.limit('6/minute')
+        @track_usage
         async def login(request: Request, account: Account) -> JSONResponse:
             headers = dict(request.headers) 
             errors = []
@@ -134,6 +137,7 @@ class Methods:
                 }, status_code=201, headers=app.no_cache_headers)
        
         @app.post(self.path + f"auth/resetToken", dependencies=[Depends(app.checks.auth_required)], tags=['auth'])
+        @track_usage
         async def resetToken(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:         
             user = await User.get(token=x_authorization)
             return JSONResponse({
@@ -145,6 +149,7 @@ class Methods:
             
         @app.get(self.path + f'auth/confirmEmail', tags=['auth'], include_in_schema=False)
         @app.limit('5/minute')
+        @track_usage
         async def confirmEmail(request: Request, key: str) -> JSONResponse:
             user = await User.get(email_confirm_key=key)
             if user:
@@ -154,6 +159,7 @@ class Methods:
         
         @app.get(self.path + f"auth/getMe", dependencies=[Depends(app.checks.auth_required)], tags=['auth'])
         @app.limit('30/minute','3/second')
+        @track_usage
         async def getMe(request: Request, x_authorization: Annotated[str, Header()]) -> JSONResponse:
             errors = []
 
@@ -171,8 +177,9 @@ class Methods:
                 }, status_code=200, headers=app.no_cache_headers
             )
         
-        @app.limit('10/minute')
         @app.post(self.path + f"edit/editMe", dependencies=[Depends(app.checks.auth_required)], tags=['auth'])
+        @app.limit('10/minute')
+        @track_usage
         async def editMe(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccount) -> JSONResponse:
             errors = []
             
@@ -192,6 +199,7 @@ class Methods:
                     
         @app.post(self.path + f"auth/editAuth", dependencies=[Depends(app.checks.auth_required)], tags=['auth'])
         @app.limit('10/minute')
+        @track_usage
         async def editAuth(request: Request, x_authorization: Annotated[str, Header()], edit: EditAccountAuth) -> JSONResponse:
             errors = []
             user = await User.get(token=x_authorization)

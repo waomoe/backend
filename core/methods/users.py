@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Annotated, Literal
 from ..database import *
+from ..other import track_usage
 
 
 class Methods:
@@ -10,6 +11,7 @@ class Methods:
         self.path = app.root + 'users/'
         
         @app.post(self.path + 'get', tags=['users'])
+        @track_usage
         async def getUser(request: Request, user_id: int, x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             
             errors = []

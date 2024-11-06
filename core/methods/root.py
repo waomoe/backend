@@ -8,6 +8,7 @@ from string import ascii_letters, digits
 from random import choice
 from ..database import *
 from ..parsers import *
+from ..other import track_usage
 
 
 class Methods:
@@ -15,6 +16,7 @@ class Methods:
         self.path = app.root + ''
         
         @app.get(self.path + 'search', tags=['general'])
+        @track_usage
         async def search(request: Request, q: str = None, type: Literal['any', 'item', 'list', 'user', 'post'] = 'any', x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             errors = []
             
@@ -35,6 +37,7 @@ class Methods:
             return JSONResponse({"errors": errors}, status_code=400, headers=app.no_cache_headers)
         
         @app.get(self.path + 'autocomplete', tags=['general'])
+        @track_usage
         async def autocomplete(request: Request, q: str = None, type: Literal['any', 'item', 'list', 'user', 'post'] = 'any', x_authorization: Annotated[str, Header()] = None) -> JSONResponse:
             errors = []
             search = {}
