@@ -18,7 +18,9 @@ def track_usage(func):
         end_cpu = process.cpu_percent()
         end_ram = process.memory_percent()
 
-        logger.info(f"Function: {func.__name__}, CPU usage: {(end_cpu - start_cpu) / psutil.cpu_count() * 100:.2f}%, RAM usage: {end_ram - start_ram:.2f}%, Time taken: {end_time - start_time:.5f} seconds")
+        logger.info(
+            f"Function: {func.__name__}, CPU usage: {(end_cpu - start_cpu) / psutil.cpu_count() * 100:.2f}%, RAM usage: {end_ram - start_ram:.2f}%, Time taken: {end_time - start_time:.5f} seconds"
+        )
 
         return result
 

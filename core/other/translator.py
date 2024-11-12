@@ -1,5 +1,4 @@
 from os import getcwd, listdir
-from asyncio import get_event_loop, run
 
 
 class Translator:
@@ -10,11 +9,11 @@ class Translator:
         This method initializes the Translator object by setting an empty dictionary as the tlbook.
         """
         self.tlbook = {}
-    
+
     def chache_translations(self):
         """
         Cache all translations in memory
-        
+
         This function reads all files in localization folder and stores all translations in tlbook.
         The structure of the tlbook is:
         {
@@ -23,26 +22,41 @@ class Translator:
             }
         }
         """
-        locales = listdir(getcwd() + '/localization')
+        locales = listdir(getcwd() + "/localization")
         for locale in locales:
-            with open(getcwd() + f'/localization/{locale}', 'r') as locale_file:
-                if locale.split('.')[0] not in self.tlbook:
-                    self.tlbook[locale.split('.')[0]] = {}
+            with open(getcwd() + f"/localization/{locale}", "r") as locale_file:
+                if locale.split(".")[0] not in self.tlbook:
+                    self.tlbook[locale.split(".")[0]] = {}
                 for line in locale_file.readlines():
-                    self.tlbook[locale.split('.')[0]][line.split('=')[0].strip().upper()] = self.translate_string(line.split('=')[0].strip(), locale.split('.')[0])
-                    if self.tlbook[locale.split('.')[0]][line.split('=')[0].strip().upper()] == line.split('=')[0].strip():
-                        del self.tlbook[locale.split('.')[0]][line.split('=')[0].strip().upper()]
-    
-    def translate_string(self, key: str, language: str = 'EN') -> str:
-        with open(getcwd() + f'/localization/{language.upper()}.txt', 'r') as locale:
+                    self.tlbook[locale.split(".")[0]][
+                        line.split("=")[0].strip().upper()
+                    ] = self.translate_string(
+                        line.split("=")[0].strip(), locale.split(".")[0]
+                    )
+                    if (
+                        self.tlbook[locale.split(".")[0]][
+                            line.split("=")[0].strip().upper()
+                        ]
+                        == line.split("=")[0].strip()
+                    ):
+                        del self.tlbook[locale.split(".")[0]][
+                            line.split("=")[0].strip().upper()
+                        ]
+
+    def translate_string(self, key: str, language: str = "EN") -> str:
+        with open(getcwd() + f"/localization/{language.upper()}.txt", "r") as locale:
             for line in locale.readlines():
-                if '=' in line and line.split('=')[0].strip().upper() == key.upper():
-                    return line[line.index('=') + 1:].replace('\\n', '\n').replace('\\t', '\t')
-        if language.upper() != 'EN':
-            return self.translate_string(key, 'EN')
+                if "=" in line and line.split("=")[0].strip().upper() == key.upper():
+                    return (
+                        line[line.index("=") + 1 :]
+                        .replace("\\n", "\n")
+                        .replace("\\t", "\t")
+                    )
+        if language.upper() != "EN":
+            return self.translate_string(key, "EN")
         return key
-            
-    def tl(self, key: str, language: str = 'EN') -> str:
+
+    def tl(self, key: str, language: str = "EN") -> str:
         """
         Translate a given key to the given language.
 
@@ -59,6 +73,5 @@ class Translator:
         """
         try:
             return self.tlbook[language.upper()][key.upper()]
-        except:
+        except Exception:
             return self.translate_string(key, language)
-    
