@@ -7,15 +7,21 @@ import asyncio
 
 
 class ShikimoriAPI:
-    def __init__(self, session: ClientSession = None) -> None:
+    def __init__(self, headers: dict = None, **kwargs) -> None:
+        """
+        Initialize shikimori api class.
+
+        Shikimori api offers RPS:5/RPM:90aQ                                                                                                                                                                                                                                                 Q
+        """
+        self.headers = headers
         self.base_url = "https://shikimori.one"
 
     async def get(self, path: str, **kwargs) -> dict | str:
-        session = ClientSession()
+        session = ClientSession(headers=self.headers)
         try:
             async with session.get(self.base_url + path, **kwargs) as response:
                 if response.status == 429:
-                    await sleep(1)
+                    await sleep(0.75)
                     return await self.get(path, **kwargs)
                 try:
                     response = await response.json()
@@ -31,11 +37,7 @@ class ShikimoriAPI:
         item_id: int,
         directy_to_db: bool = True,
     ) -> dict:
-        """
-        Shikimori api offers RPS:3 & RPM:90
-        (need to be careful w/ ratelimit...)
-        """
-        print(f'Parsing {item_type} item {item_id}')
+        print(f"Parsing {item_type} item {item_id}")
         data = await self.get(f"/api/{item_type}/{item_id}")
         if directy_to_db and data is not None and type(data) is dict:
             if "code" in data.keys() and data["code"] == 404:
@@ -67,22 +69,27 @@ class ShikimoriAPI:
         )
         return dict({"animes": animes, "mangas": mangas})
 
-    async def parse_everything(
-        self, kinds: list = ["animes", "mangas"], threads: int = 60, **kwargs
-    ) -> None:
-        total = {}
-        for kind in kinds:
-            total[kind] = (await self.get(f'/api/{kind}'))[0].get('id')
-        print(total.items())
-        for kind in total.keys():
-            tasks = []
-            for i in range(total[kind]):
-                task = asyncio.create_task(self.parse_item(kind, total[kind] - i))
+    async def parse_recent(self, kind: Literal["animes", "mangas"], **kwargs) -> None:
+        tasks = []
+        page = 0
+        while True:
+            page += 1
+            items = await self.get(
+                "/api/" + kind,
+                params={"limit": 50, "order": "id_desc", "page": page, **kwargs},
+            )
+            print(page, len(items))
+            for item in items:
+                print(item["id"])
+                task = asyncio.create_task(self.parse_item(kind, item["id"]))
                 tasks.append(task)
-                if len(tasks) >= threads:
-                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                if len(tasks) >= 50:
+                    done, pending = await asyncio.wait(
+                        tasks, return_when=asyncio.FIRST_COMPLETED
+                    )
                     for task in done:
                         await task
                     tasks = list(pending)
-            for task in tasks:
-                await task
+            if len(items) < 1:
+                break
+        return items

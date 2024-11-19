@@ -13,3 +13,4 @@ python-jose[cryptography]
 httpx
 authlib
 psutil
+anipy-cli

@@ -20,3 +20,8 @@ class Checks:
         if "admin" not in user.groups:
             raise HTTPException(detail="You are not an admin", status_code=401)
         return x_authorization
+
+
+class ClientBuffer:
+    def __init__(self, app):
+        self.ips = {}

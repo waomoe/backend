@@ -27,7 +27,7 @@ from time import sleep
 from loguru import logger
 from random import choice, shuffle
 from string import ascii_letters, digits
-from asyncio import create_task
+from asyncio import get_event_loop, new_event_loop
 import core.database.exceptions as exceptions
 
 
@@ -68,7 +68,10 @@ class PerfomanceMeter:
 
 
 perfomance = PerfomanceMeter()
-Thread(target=perfomance.report).start()
+
+
+def monitor_perfomance() -> None:
+    Thread(target=perfomance.report).start()
 
 
 class DatabaseBackups:
@@ -120,6 +123,58 @@ class DatabaseBackups:
                 f2.write(Fernet(CRYPT_KEY.encode("utf-8")).decrypt(f.read()))
 
 
+class WebsiteSetting:
+    __tablename__: str = "website_settings"
+    __table_args__ = {
+        "comment": "main",
+    }
+
+    setting_id = Column(
+        Integer, Identity(start=1, increment=1), primary_key=True, unique=True
+    )
+    key = Column(String)
+    value = Column(String)
+
+    @classmethod
+    async def add(cls, **kwargs) -> Self:
+        start_at = datetime.now()
+        async with engines["main"].begin() as conn:
+            if "key" in kwargs:
+                pass
+            setting = WebsiteSetting(**kwargs)
+            conn.add(setting)
+            await conn.commit()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return await cls.get(setting_id=setting.setting_id)
+
+    @classmethod
+    async def get(cls, **kwargs) -> Self | None:
+        start_at = datetime.now()
+        async with engines["main"].begin() as conn:
+            setting = (
+                (await conn.execute(select(WebsiteSetting).filter_by(**kwargs)))
+                .scalars()
+                .first()
+            )
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return setting
+
+    @classmethod
+    async def update(cls, **kwargs) -> Self | None:
+        start_at = datetime.now()
+        async with engines["main"].begin() as conn:
+            setting = (
+                (await conn.execute(select(WebsiteSetting).filter_by(**kwargs)))
+                .scalars()
+                .first()
+            )
+            for key, value in kwargs.items():
+                setattr(setting, key, value)
+            await conn.commit()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return setting
+
+
 class User(Base):
     __tablename__: str = "users"
     __table_args__ = {
@@ -131,12 +186,12 @@ class User(Base):
     )
     email = Column(String, unique=True)
     username = Column(String, unique=True)
-    aliases = Column(JSON, default=None)
+    aliases = Column(JSON)
     name = Column(String)
     password = Column(String)
     token = Column(String, unique=True)
     two_factor = Column(String)
-    hidden = Column(Boolean, default=False)
+    hidden = Column(Boolean)
     oauth = Column(JSON)
     api_tokens = Column(JSON)
 
@@ -253,19 +308,27 @@ class User(Base):
     class Privacy:
         pass
 
-    async def get_privacy_settings(self):
+    async def get_privacy_settings(self, apply_attrs=True) -> dict:
         if self and self.privacy is None:
             self.privacy = "2" * 24
         privacy_dict = {}
+        convert = {
+            "1": "public",
+            "2": "friends",
+            "3": "private",
+        }
         for key in self.__dict__.keys():
             if key in self.privacy_keys.keys():
-                match int(self.privacy[self.privacy_keys[key] - 1]):
-                    case 1:
-                        privacy_dict[key] = "public"
-                    case 2:
-                        privacy_dict[key] = "friends"
-                    case 3:
-                        privacy_dict[key] = "private"
+                privacy_dict[key] = convert[(self.privacy[self.privacy_keys[key] - 1])]
+                try:
+                    if apply_attrs:
+                        setattr(self, key, privacy_dict[key])
+                except AttributeError:
+                    print(
+                        f'{self}: Failed to set privacy "{privacy_dict[key]}" for key "{key}"'
+                    )
+                except Exception:
+                    pass
         return privacy_dict
 
     @classmethod
@@ -334,7 +397,7 @@ class User(Base):
                 .scalars()
                 .first()
             )
-            if user and user.following is None:
+            if user and not user.following:
                 user.following = []
         if user:
             await user.get_privacy_settings()
@@ -478,6 +541,8 @@ class User(Base):
                             f"Value {value} for key {key} is blacklisted to set"
                         )
                 except Exception as exc:
+                    if str(exc).startwith("[Errno 2]"):
+                        pass
                     print(f"Failed to apply blacklist for key {key}: {exc}")
 
             for key, value in kwargs.items():
@@ -631,8 +696,8 @@ class Post(Base):
     parent_id = Column(Integer)
     author_id = Column(Integer)
     kind = Column(String)  # probably something like 'comment', 'review', 'forum'
-    deleted = Column(Boolean, default=False)
-    hidden = Column(Boolean, default=False)
+    deleted = Column(Boolean)
+    hidden = Column(Boolean)
 
     title = Column(String)
     content = Column(String)
@@ -791,8 +856,8 @@ class ItemList(Base):
     )
     parent_id = Column(Integer)
     author_id = Column(Integer)
-    deleted = Column(Boolean, default=False)
-    hidden = Column(Boolean, default=False)
+    deleted = Column(Boolean)
+    hidden = Column(Boolean)
     uniq_id = Column(String, unique=True)
 
     name = Column(String)
@@ -806,11 +871,11 @@ class ItemList(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    upvotes = Column(JSON, default=[])
-    downvotes = Column(JSON, default=[])
-    reactions = Column(JSON, default=[])
+    upvotes = Column(JSON)
+    downvotes = Column(JSON)
+    reactions = Column(JSON)
 
-    followers = Column(JSON, default=[])
+    followers = Column(JSON)
 
     @classmethod
     async def add(cls, **kwargs) -> Self:
@@ -950,14 +1015,14 @@ class Item(Base):
     edited_at = Column(DateTime(timezone=True))
     data_refresh = Column(DateTime(timezone=True))
 
-    favorited_by = Column(JSON, default=[])
-    in_lists = Column(JSON, default=[])
+    favorited_by = Column(JSON)
+    in_lists = Column(JSON)
 
     ratings = Column(JSON)
-    upvotes = Column(JSON, default=[])
-    downvotes = Column(JSON, default=[])
+    upvotes = Column(JSON)
+    downvotes = Column(JSON)
 
-    deleted = Column(Boolean, default=False)
+    deleted = Column(Boolean)
 
     @classmethod
     async def add(cls, **kwargs) -> Self:
@@ -1072,7 +1137,11 @@ class Item(Base):
         return items
 
     def __repr__(self) -> str:
-        return f"<Item #{self.item_id} [{self.author_id}]>"
+        return (
+            f"<Item #{self.item_id}"
+            + (f" {self.kind}/{self.mal_id}" if self.mal_id else self.kind)
+            + ">"
+        )
 
 
 class WebVisualNovel(Base):
@@ -1086,10 +1155,10 @@ class WebVisualNovel(Base):
     )
     author_id = Column(Integer)
     unic_id = Column(String, unique=True, nullable=False)
-    deleted = Column(Boolean, default=False)
-    hidden = Column(Boolean, default=False)
+    deleted = Column(Boolean)
+    hidden = Column(Boolean)
 
-    aliases = Column(JSON, default=None)
+    aliases = Column(JSON)
 
     name = Column(String)
     description = Column(String)
@@ -1097,7 +1166,7 @@ class WebVisualNovel(Base):
     data = Column(JSON)
     status = Column(String)
     version = Column(String)
-    screenshots = Column(JSON, default=None)
+    screenshots = Column(JSON)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     edit_at = Column(DateTime(timezone=True), server_default=None)
@@ -1105,9 +1174,9 @@ class WebVisualNovel(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    upvotes = Column(JSON, default=[])
-    downvotes = Column(JSON, default=[])
-    reactions = Column(JSON, default=[])
+    upvotes = Column(JSON)
+    downvotes = Column(JSON)
+    reactions = Column(JSON)
 
     views = Column(Integer, default=0)
 
@@ -1115,10 +1184,10 @@ class WebVisualNovel(Base):
     sprite_max_size_mb = Column(Integer, default=16)
     sound_max_size_mb = Column(Integer, default=16)
     conf_file_max_size_mb = Column(Integer, default=16)
-    conf_files = Column(JSON, default={})
-    text_files = Column(JSON, default={})
-    sprite_files = Column(JSON, default={})
-    sound_files = Column(JSON, default={})
+    conf_files = Column(JSON)
+    text_files = Column(JSON)
+    sprite_files = Column(JSON)
+    sound_files = Column(JSON)
 
     @classmethod
     async def add(cls, **kwargs) -> Self | None:
@@ -1330,14 +1399,21 @@ class CDNItem(Base):
 
 
 async def create_tables():
-    for name, engine in engines.items():
-        if not os.path.exists("./databases/"):
-            os.mkdir("./databases")
-        async with engine.begin() as conn:
-            for table in Base.metadata.sorted_tables:
-                if table.comment != name:
-                    continue
-                await conn.run_sync(table.create, checkfirst=True)
+    try:
+        for name, engine in engines.items():
+            if not os.path.exists("./databases/"):
+                os.mkdir("./databases")
+            async with engine.begin() as conn:
+                for table in Base.metadata.sorted_tables:
+                    if table.comment != name:
+                        continue
+                    await conn.run_sync(table.create, checkfirst=True)
+    except Exception as exc:
+        print(exc)
 
 
-create_task(create_tables())
+def create_db():
+    if get_event_loop() is None:
+        new_event_loop().run_until_completed(create_tables())
+    else:
+        get_event_loop().create_task(create_tables())

@@ -12,7 +12,7 @@ class Methods:
 
         class NewPost(BaseModel):
             pass
-    
+
         @app.get(self.path + "search", tags=["posts"])
         @track_usage
         async def searchPost(

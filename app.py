@@ -5,7 +5,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from datetime import datetime
-from core import Translator, Email, Checks, setup_hook
+from core import Translator, Email, Checks, setup_hook, create_db, monitor_perfomance
 from loguru import logger
 from pprint import pformat
 from loguru._defaults import LOGURU_FORMAT
@@ -17,7 +17,6 @@ from threading import Thread
 from asyncio import sleep
 from sys import stdout
 import logging
-
 
 version = "1.0.5-dev"
 
@@ -168,7 +167,7 @@ app.no_cache_headers = {
 
 
 @app.get("/favicon.ico", include_in_schema=False)
-@app.state.limiter.limit("10/minute")
+@app.limit("10/minute")
 async def favicon(request: Request):
     return FileResponse("./logo.png")
 
@@ -188,12 +187,15 @@ for module in __all__:
     module.Methods(app)
     app.logger.info(f"Loaded {module.__name__} methods")
 
+create_db()
+monitor_perfomance()
+
 app.setup_hook = create_task(setup_hook())
 app.logger.success(
     f"Started wao.moe backend v{app.current_version} in {datetime.now() - app.start_at}"
 )
 app.setup_hook.add_done_callback(
     lambda x: app.logger.info(
-        f"\n\n\t\tWAO.MOE Backend v{app.current_version}\n\t\tCommit #{app.commit}\n\t\tAPI URL: {app.api_url}\n\t\tFrontend URL: {app.url}\n\t\tModules loaded: {len(__all__)}\n"
+        f"\n\n\tWAO.MOE Backend v{app.current_version}\n\tCommit #{app.commit}\n\tAPI URL: {app.api_url}\n\tFrontend URL: {app.url}\n\tModules loaded: {len(__all__)}\n"
     )
 )

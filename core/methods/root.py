@@ -29,7 +29,7 @@ class Methods:
 
                 if type == "any" or type == "item":
                     results += [
-                        await ShikimoriAPI().autocomplete(q, limit=50, return_url=True)
+                        await ShikimoriAPI().autocomplete(q, limit=10, return_url=True)
                     ]
                 if type == "any" or type == "user":
                     results += await User.search(q)
@@ -44,17 +44,21 @@ class Methods:
         @track_usage
         async def autocomplete(
             request: Request,
-            q: str = None,
-            type: Literal["any", "item", "list", "user", "post"] = "any",
+            q: str,
+            kind: Literal["any", "item", "list", "user", "post"] = "any",
             x_authorization: Annotated[str, Header()] = None,
         ) -> JSONResponse:
             search = {}
-            if type == "any" or type == "item":
+            if kind in ["any", "item"]:
                 response = await ShikimoriAPI().autocomplete(q)
                 search["animes"], search["mangas"] = (
                     response["animes"],
                     response["mangas"],
                 )
-            if type == "any" or type == "list":
+            if kind in ["any", "list"]:
                 search["lists"] = await ItemList.search(True, q)
+            if kind in ["any", "user"]:
+                search["users"] = await User.search(q)
+            if kind in ["any", "post"]:
+                search["posts"] = await Post.search(q)
             return search

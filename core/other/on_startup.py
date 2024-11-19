@@ -18,6 +18,7 @@ async def setup_hook(*args, **kwargs) -> None:
         )
         await User.generate_token(root.user_id)
     if not await User.get(username="nichind"):
+        print("Creating admin account...")
         await User.add(
             username="nichind",
             password="".join(choice(ascii_letters + digits) for _ in range(128)),
@@ -25,10 +26,11 @@ async def setup_hook(*args, **kwargs) -> None:
             name="Ichi",
             email="nichind@wao.moe",
             website_url="https://nichind.dev",
-            aliases=['owner', 'dev', 'api'],
-            token="".join(choice(ascii_letters + digits) for _ in range(128))
+            aliases=["owner", "dev", "api"],
+            token="".join(choice(ascii_letters + digits) for _ in range(128)),
         )
     if not await User.get(username="qkn"):
+        print("Creating owner account...")
         await User.add(
             username="qkn",
             password="".join(choice(ascii_letters + digits) for _ in range(128)),

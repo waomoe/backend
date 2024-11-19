@@ -253,7 +253,7 @@ class Methods:
             dependencies=[Depends(app.checks.auth)],
             tags=["auth"],
         )
-        @app.limit("30/minute", "3/second")
+        @app.limit("60/minute")
         @track_usage
         async def getMe(
             request: Request, x_authorization: Annotated[str, Header()]
@@ -278,7 +278,9 @@ class Methods:
                     "closed_interactions": user.closed_interactions,
                     "favorites_list_id": (
                         await ItemList.get(author_id=user.user_id, kind="favorites")
-                    ).list_id,
+                    ).list_id
+                    if await ItemList.get(author_id=user.user_id, kind="favorites")
+                    else None,
                     "email_confirmed": True if user.email_confirmed_at else False,
                 },
                 status_code=200,

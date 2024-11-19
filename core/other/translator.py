@@ -47,11 +47,14 @@ class Translator:
         with open(getcwd() + f"/localization/{language.upper()}.txt", "r") as locale:
             for line in locale.readlines():
                 if "=" in line and line.split("=")[0].strip().upper() == key.upper():
-                    return (
+                    translated = (
                         line[line.index("=") + 1 :]
                         .replace("\\n", "\n")
                         .replace("\\t", "\t")
                     )
+                    while translated.endswith("\n"):
+                        translated = translated[:-2]
+                    return translated
         if language.upper() != "EN":
             return self.translate_string(key, "EN")
         return key
