@@ -121,7 +121,7 @@ class Methods:
                             email=account.email,
                             subject="Your registration code",
                             preset="confirm-email",
-                            user=user.user_id,
+                            user=user.username,
                             key_url=email_confirm_url,
                             ip=headers["x-real-ip"],
                         )

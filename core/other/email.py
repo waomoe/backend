@@ -11,7 +11,7 @@ class Email:
         message: str = "",
         message_html: str = "",
         preset: str = None,
-        from_email: str = "no-reply@wao.moe",
+        from_email: str = "mail-chan@wao.moe",
         **format,
     ):
         if not message and not message_html and not preset:
@@ -23,13 +23,13 @@ class Email:
                 (
                     f"core/other/email-presets/{preset}" + ""
                     if ".html" in preset
-                    else ".html"
+                    else f"core/other/email-presets/{preset}.html"
                 ),
                 "r",
             ).read()
-        self.smtp.sendmail(
-            from_email, email, f"Subject: {subject}\n\n{message}".format(**format)
-        )
+        for key, value in format.items():
+            message = message.replace("{" + str(key) + "}", str(value))
+        self.smtp.sendmail(from_email, email, f"Subject: {subject}\n\n{message}")
 
     class Presets:
         pass

@@ -20,7 +20,7 @@ from uuid import uuid4
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from os import getenv
+from os import getenv, path
 from dotenv import load_dotenv
 from threading import Thread
 from time import sleep
@@ -54,9 +54,9 @@ class PerfomanceMeter:
 
     def report(self):
         while True:
-            sleep(300)
-            if len(self.all) > 100000:
-                self.all = self.all[-100000:]
+            sleep(60 * 5)
+            if len(self.all) > 10**6:
+                self.all = self.all[-(10**6) :]
             logger.info("Database delay report")
             logger.info(f"Average time per action: {sum(self.all) / len(self.all)}s")
             logger.info(
@@ -101,14 +101,18 @@ class DatabaseBackups:
                 "rb",
             ) as f:
                 print(
-                    db_backup_folder
-                    + db
-                    + f'/crypted_{db}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt'
+                    path.join(
+                        db_backup_folder,
+                        db,
+                        f'/crypted_{db}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',
+                    ),
                 )
                 with open(
-                    db_backup_folder
-                    + db
-                    + f'/crypted_{db}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',
+                    path.join(
+                        db_backup_folder,
+                        db,
+                        f'/crypted_{db}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',
+                    ),
                     "wb",
                 ) as f2:
                     f2.write(Fernet(CRYPT_KEY.encode("utf-8")).encrypt(f.read()))
@@ -211,7 +215,7 @@ class User(Base):
     badges = Column(JSON)
 
     created_at = Column(DateTime(timezone=True), default=func.now())
-    active_at = Column(DateTime(timezone=True), default=func.now())
+    active_at = Column(DateTime(timezone=True))
     updated_at = Column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()
     )
@@ -541,7 +545,7 @@ class User(Base):
                             f"Value {value} for key {key} is blacklisted to set"
                         )
                 except Exception as exc:
-                    if str(exc).startwith("[Errno 2]"):
+                    if str(exc).startswith("[Errno 2]"):
                         pass
                     print(f"Failed to apply blacklist for key {key}: {exc}")
 
@@ -552,7 +556,7 @@ class User(Base):
         return await cls.get(user_id=user_id)
 
     @classmethod
-    async def generate_token(cls, user_id: int = None) -> str:
+    async def generate_token(cls, user_id: int = None, token_len: int = 64) -> str:
         """
         Generates a unique token for a given user.
 
@@ -585,15 +589,15 @@ class User(Base):
         encMessage = f.encrypt(
             (
                 f"{user.user_id}"
-                + "".join(choice(ascii_letters + digits) for _ in range(94))
-            ).encode("utf-8")[:64][::-1]
+                + "".join(choice(ascii_letters + digits) for _ in range(token_len))
+            ).encode("utf-8")[:token_len][::-1]
         )
 
         token = list(encMessage.decode("utf-8"))
         shuffle(token)
-        token = ("wA" + "".join(token))[:96]
+        token = ("wA" + "".join(token))[:token_len]
 
-        if await cls.get(token=token):
+        if await cls.get(token=token):  # Possible?
             return await cls.generate_token(user_id)
 
         await cls.update(user_id=user_id, token=token)

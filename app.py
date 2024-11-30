@@ -18,7 +18,8 @@ from asyncio import sleep
 from sys import stdout
 import logging
 
-version = "1.0.5-dev"
+
+version = "1.0.7-dev"
 
 tags_metadata = [
     {
