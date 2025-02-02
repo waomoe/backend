@@ -1,0 +1,8 @@
+.venv
+.vscode
+databases
+logs
+.env
+*.pyc
+__pychache__
+test.py

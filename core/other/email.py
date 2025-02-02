@@ -1,38 +1,40 @@
 import smtplib
+from os import getenv, path, listdir
 
 
 class Email:
-    smtp = smtplib.SMTP("localhost", 25, local_hostname="localhost")
+    smtp = smtplib.SMTP(
+        getenv("SMTP_HOST", "localhost"),
+        int(getenv("SMTP_PORT", 25)),
+        local_hostname="localhost",
+    )
+
+    def __init__(self, from_addr, app):
+        self.from_addr = from_addr
+        self.app = app
 
     def send(
         self,
-        email: str,
+        to: str,
+        message_content: str,
         subject: str,
-        message: str = "",
-        message_html: str = "",
-        preset: str = None,
-        from_email: str = "mail-chan@wao.moe",
+        from_addr: str = None,
         **format,
-    ):
-        if not message and not message_html and not preset:
-            raise ValueError("Either message, preset or message_html must be provided")
-        if message_html:
-            message = message_html
-        if preset:
-            message = open(
-                (
-                    f"core/other/email-presets/{preset}" + ""
-                    if ".html" in preset
-                    else f"core/other/email-presets/{preset}.html"
-                ),
-                "r",
+    ) -> None:
+        if message_content in self.presets.keys():
+            message_content = str(self.presets[message_content]).format(**format)
+        elif self.app.tl(message_content) != message_content:
+            message_content = (self.app.tl(message_content)).format(**format)
+        self.app.debug(
+            f'Sending email with subject "{subject}" to {to}; message: {message_content[:50]}...'
+        )
+        self.smtp.sendmail(
+            from_addr or self.from_addr, to, f"Subject: {subject}\n\n{message_content}"
+        )
+
+    presets = {}
+    for filename in listdir(path.join(path.dirname(__file__) + "/email_presets/")):
+        if filename.endswith(".txt") or filename.endswith(".html"):
+            presets[".".join(filename.split(".")[:-1])] = open(
+                path.join(path.dirname(__file__) + "/email_presets", filename), "r"
             ).read()
-        for key, value in format.items():
-            message = message.replace("{" + str(key) + "}", str(value))
-        self.smtp.sendmail(from_email, email, f"Subject: {subject}\n\n{message}")
-
-    class Presets:
-        pass
-
-    def __repr__(self):
-        return f"{self.smtp.local_hostname}:{self.smtp.default_port}"

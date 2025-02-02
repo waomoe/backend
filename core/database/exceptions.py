@@ -1,53 +1,47 @@
-class UserAlreadyExists(Exception):
-    def __init__(self, message):
-        self.message = message
+class BaseException(Exception):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.message = self.__doc__
+
+class NoID(BaseException):
+    """
+    No id found
+    """
 
 
-class UserNotInitialized(Exception):
-    def __init__(self, message):
-        self.message = message
+class Blacklisted(Exception):
+    def __init__(self, key: str, value: str):
+        message = (
+            f"Value {value} for {key} is blacklisted.\n"
+            "Ignore by setting ignore_blacklist=True"
+        )
+        super().__init__(message)
 
 
-class UserNotFound(Exception):
-    def __init__(self, message):
-        self.message = message
+class Duplicate(Exception): ...
 
 
-class PostNotInitialized(Exception):
-    def __init__(self, message):
-        self.message = message
+class Invalid(Exception): ...
 
 
-class PostNotFound(Exception):
-    def __init__(self, message):
-        self.message = message
+class NotFound(Exception): ...
 
 
-class ListNotInitialized(Exception):
-    def __init__(self, message):
-        self.message = message
+class NotUnique(Exception): ...
 
 
-class ListNotFound(Exception):
-    def __init__(self, message):
-        self.message = message
+class NoCryptKey(Exception):
+    def __init__(self, key: str = "CRYPT_KEY"):
+        message = (
+            f"No crypt key found. Please set the {key} environment variable.\n"
+            "For more information, check the README."
+        )
+        super().__init__(message)
 
 
-class ItemNotInitialized(Exception):
-    def __init__(self, message):
-        self.message = message
-
-
-class ItemNotFound(Exception):
-    def __init__(self, message):
-        self.message = message
-
-
-class BlacklistedValue(Exception):
-    def __init__(self, message):
-        self.message = message
-
-
-class ValueTooLong(Exception):
-    def __init__(self, message):
-        self.message = message
+class NotIknowWhatImDoing(Exception):
+    def __init__(self):
+        message = (
+            "Are you sure you know what you're doing?"
+        )
+        super().__init__(message)

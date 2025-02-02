@@ -1,0 +1,3 @@
+[submodule "players-ru"]
+	path = core/parsers/anime_parsers_ru
+	url = https://github.com/waomoe/players-ru

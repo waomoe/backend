@@ -11,6 +11,5 @@ loguru
 cryptography
 python-jose[cryptography]
 httpx
-authlib
 psutil
-anipy-cli
+requests

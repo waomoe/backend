@@ -59,8 +59,6 @@ tags_metadata = [
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     version=version,
-    title="WAO.MOE",
-    description="Open public API for wao.moe, visit https://github.com/waomoe/backend to discover more.",
     openapi_url="/pubapi.json",
     openapi_tags=tags_metadata,
 )
@@ -83,6 +81,8 @@ app.root = "/"
 app.email = Email()
 app.translator = Translator()
 app.tl = app.translator.tl
+app.title = app.translator.tl("title")
+app.description = app.translator.tl("description")
 
 
 async def rechache_translations():
@@ -170,7 +170,7 @@ app.no_cache_headers = {
 @app.get("/favicon.ico", include_in_schema=False)
 @app.limit("10/minute")
 async def favicon(request: Request):
-    return FileResponse("./logo.png")
+    return FileResponse("./fav.png")
 
 
 app.logger.info("Loading modules from core.methods...")

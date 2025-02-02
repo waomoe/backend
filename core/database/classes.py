@@ -1,4 +1,3 @@
-import base64
 import os
 from sqlalchemy import (
     Column,
@@ -9,37 +8,35 @@ from sqlalchemy import (
     DateTime,
     func,
     Identity,
+    ForeignKey,
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, reconstructor
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from datetime import datetime
-from typing import Self, List
-from uuid import uuid4
+from typing import Self, List, Literal, Dict
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from os import getenv, path
+from os import getenv
 from dotenv import load_dotenv
-from threading import Thread
 from time import sleep
 from loguru import logger
-from random import choice, shuffle
 from string import ascii_letters, digits
+from random import choice
+import inspect
 from asyncio import get_event_loop, new_event_loop
-import core.database.exceptions as exceptions
+import core.database.exceptions as database_exc
 
 
 load_dotenv()
-db_backup_folder = getenv("DB_FOLDER_PATH") + "backups/"
 engines = {
     n: create_async_engine(
         "sqlite+aiosqlite:///"
         + getenv("DB_FOLDER_PATH")
-        + getenv(f"{n}_db_name".upper())
+        + (f"{n}_" if n != "main" else "")
+        + "server.sqlite"
     )
-    for n in ["main", "vn", "cdn"]
+    for n in ["main"]
 }
 sessions = {
     k: sessionmaker(v, expire_on_commit=False, class_=AsyncSession)
@@ -52,1354 +49,579 @@ class PerfomanceMeter:
     start = datetime.now()
     all = [0]
 
-    def report(self):
+    async def report(self):
         while True:
-            sleep(60 * 5)
+            await sleep(60 * 5)
             if len(self.all) > 10**6:
                 self.all = self.all[-(10**6) :]
-            logger.info("Database delay report")
-            logger.info(f"Average time per action: {sum(self.all) / len(self.all)}s")
+            avg_all = sum(self.all) / len(self.all)
+            avg_1k = sum(self.all[-1000:]) / len(self.all[-1000:])
+            avg_100 = sum(self.all[-100:]) / len(self.all[-100:])
             logger.info(
-                f"Average time per action (last 1k): {sum(self.all[-1000:]) / len(self.all[-1000:])}s"
-            )
-            logger.info(
-                f"Average time per action (last 100): {sum(self.all[-100:]) / len(self.all[-100:])}s"
+                f"Database delay report:\n"
+                f"  - Average time per action: {avg_all / 1000:.2f}ms\n"
+                f"  - Average time per action (last 1k): {avg_1k / 1000:.2f}ms\n"
+                f"  - Average time per action (last 100): {avg_100 / 1000:.2f}ms"
             )
 
 
 perfomance = PerfomanceMeter()
 
-
-def monitor_perfomance() -> None:
-    Thread(target=perfomance.report).start()
-
-
-class DatabaseBackups:
-    def __init__(self):
-        pass
-
-    @classmethod
-    async def backup_db(self, which: str = None):
-        load_dotenv()
-        CRYPT_KEY = getenv("DB_CRYPT_KEY")
-        if not os.path.exists(db_backup_folder):
-            os.mkdir(db_backup_folder)
-        for db in ["main", "vn"]:
-            if which is not None and db != which:
-                continue
-            if os.path.exists(db_backup_folder + db) is False:
-                os.mkdir(db_backup_folder + db)
-            files = os.listdir(db_backup_folder + db)
-            if len(files) > 4:
-                files.sort()
-                for f in files[:-4]:
-                    os.remove(db_backup_folder + f)
-            with open(
-                getenv("DB_FOLDER_PATH")
-                + (f"{db}_" if db != "main" else "")
-                + "waomoe.sqlite",
-                "rb",
-            ) as f:
-                print(
-                    path.join(
-                        db_backup_folder,
-                        db,
-                        f'/crypted_{db}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',
-                    ),
-                )
-                with open(
-                    path.join(
-                        db_backup_folder,
-                        db,
-                        f'/crypted_{db}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',
-                    ),
-                    "wb",
-                ) as f2:
-                    f2.write(Fernet(CRYPT_KEY.encode("utf-8")).encrypt(f.read()))
-
-    @classmethod
-    async def decrypt_db(self, db_path: str):
-        load_dotenv()
-        CRYPT_KEY = getenv("DB_CRYPT_KEY")
-        # files = os.listdir(db_backup_folder)
-        with open(db_path, "rb") as f:
-            with open("./decrypted.sqlite", "wb") as f2:
-                f2.write(Fernet(CRYPT_KEY.encode("utf-8")).decrypt(f.read()))
+def db_debug(*args, **kwargs):
+    if os.getenv("DB_DEBUG", False):
+        logger.debug(*args, **kwargs)
 
 
-class WebsiteSetting:
-    __tablename__: str = "website_settings"
-    __table_args__ = {
-        "comment": "main",
-    }
+class BaseItem(Base):
+    """
+    Base class for all database items
+    """
 
-    setting_id = Column(
-        Integer, Identity(start=1, increment=1), primary_key=True, unique=True
+    __abstract__ = True
+
+    class Audit:
+        def __repr__(self):
+            return f'<Audit audits={sum([len(x) for x in self.__dict__.values()])} [{", ".join([str(x) for x in self.__dict__.keys() if len(self.__dict__[x]) > 0])}]>'
+
+    audit = Audit()
+
+    id = Column(
+        Integer,
+        Identity(start=1, increment=1),
+        primary_key=True,
+        unique=True,
+        info={"searchable": True, "safe": True},
     )
-    key = Column(String)
-    value = Column(String)
-
-    @classmethod
-    async def add(cls, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with engines["main"].begin() as conn:
-            if "key" in kwargs:
-                pass
-            setting = WebsiteSetting(**kwargs)
-            conn.add(setting)
-            await conn.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(setting_id=setting.setting_id)
-
-    @classmethod
-    async def get(cls, **kwargs) -> Self | None:
-        start_at = datetime.now()
-        async with engines["main"].begin() as conn:
-            setting = (
-                (await conn.execute(select(WebsiteSetting).filter_by(**kwargs)))
-                .scalars()
-                .first()
-            )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return setting
-
-    @classmethod
-    async def update(cls, **kwargs) -> Self | None:
-        start_at = datetime.now()
-        async with engines["main"].begin() as conn:
-            setting = (
-                (await conn.execute(select(WebsiteSetting).filter_by(**kwargs)))
-                .scalars()
-                .first()
-            )
-            for key, value in kwargs.items():
-                setattr(setting, key, value)
-            await conn.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return setting
-
-
-class User(Base):
-    __tablename__: str = "users"
-    __table_args__ = {
-        "comment": "main",
-    }
-
-    user_id = Column(
-        Integer, Identity(start=1, increment=1), primary_key=True, unique=True
+    created_at = Column(
+        DateTime(timezone=True), default=func.now(), info={"safe": True}
     )
-    email = Column(String, unique=True)
-    username = Column(String, unique=True)
-    aliases = Column(JSON)
-    name = Column(String)
-    password = Column(String)
-    token = Column(String, unique=True)
-    two_factor = Column(String)
-    hidden = Column(Boolean)
-    oauth = Column(JSON)
-    api_tokens = Column(JSON)
-
-    avatar_url = Column(String)
-    banner_url = Column(String)
-    avatar_decoration = Column(String)
-    profile_decoration = Column(String)
-    website_url = Column(String)
-    bio = Column(String)
-    status = Column(String)
-    location = Column(String)
-    about = Column(String)
-    birthday = Column(DateTime(timezone=True))
-    gender = Column(String)
-    social = Column(JSON)
-    birthday = Column(DateTime(timezone=True))
-    badges = Column(JSON)
-
-    created_at = Column(DateTime(timezone=True), default=func.now())
-    active_at = Column(DateTime(timezone=True))
     updated_at = Column(
-        DateTime(timezone=True), default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), onupdate=func.now(), info={"safe": True}
     )
+    is_deleted = Column(Boolean)
 
-    banned_until = Column(DateTime(timezone=True))
-    banned_reason = Column(String)
-    muted_until = Column(DateTime(timezone=True))
-    muted_reason = Column(String)
-    mod_logs = Column(JSON)
-
-    email_confirm_key = Column(String)
-    email_confirmed_at = Column(DateTime(timezone=True))
-
-    language = Column(String, default="en")
-    theme = Column(String)
-
-    privacy_keys = {
-        "email": 12,
-        "about": 5,
-        "location": 10,
-        "gender": 9,
-        "social": 11,
-        "website_url": 13,
-        "following": 14,
-        "followers": 15,
-        "subscribed": 16,
-        "subscribers": 17,
-        "theme": 18,
-        "language": 19,
-        "avatar_url": 20,
-        "banner_url": 21,
-        "active_at": 22,
-    }
-
-    # Privacy key:
-    privacy = Column(String)  # None = everything is friend only
-    # 1st num - User profile visibility (1 - public, 2 - friends only, 3 - private)
-    # 2nd - Posts visibility (1 - public, 2 - friends only, 3 - private)
-    # 3rd - Lists visibility (1 - public, 2 - friends only, 3 - private)
-    # 4th - Favorites visibility (1 - public, 2 - friends only, 3 - private)
-    # 5th - about visibility (1 - public, 2 - friends only, 3 - private)
-    # 6th - Who can post on wall (1 - public, 2 - friends only, 3 - private)
-    # 7th - Who can comment on posts (1 - public, 2 - friends only, 3 - private)
-    # 8th - birthday visibility (1 - public, 2 - friends only, 3 - private)
-    # 9th - gender visibility (1 - public, 2 - friends only, 3 - private)
-    # 10th - location visibility (1 - public, 2 - friends only, 3 - private)
-    # 11th - social visibility (1 - public, 2 - friends only, 3 - private)
-    # 12th - email visibility (1 - public, 2 - friends only, 3 - private)
-    # 13th - website visibility (1 - public, 2 - friends only, 3 - private)
-    # 14th - following visibility (1 - public, 2 - friends only, 3 - private)
-    # 15th - followers visibility (1 - public, 2 - friends only, 3 - private)
-    # 16th - subscribed visibility (1 - public, 2 - friends only, 3 - private)
-    # 17th - subscribers visibility (1 - public, 2 - friends only, 3 - private)
-    # 18th - theme visibility (1 - public, 2 - friends only, 3 - private)
-    # 19th - language visibility (1 - public, 2 - friends only, 3 - private)
-    # 20th - avatar visibility (1 - public, 2 - friends only, 3 - private)
-    # 21th - banner visibility (1 - public, 2 - friends only, 3 - private)
-    # 22th - activity visibility (1 - public, 2 - friends only, 3 - private)
-    # 23th = birthday details visibility (1 - year, 2 - month + day 3 - year & month + day)
-    # 24th = custom style visibility (1 - public, 2 - friends only, 3 - private)
-
-    settings = Column(JSON)
-
-    groups = Column(JSON)
-
-    plus_active_until = Column(DateTime(timezone=True))
-    transactions = Column(JSON)
-
-    trackers = Column(JSON)
-
-    closed_interactions = Column(JSON)
-
-    following = Column(JSON)
-    followers = Column(JSON)
-    subscribed = Column(JSON)
-    subscribers = Column(JSON)
-    blocked_users = Column(JSON)
-
-    custom_styles = Column(JSON)
-
-    sessions = Column(JSON)
-    reg_ip = Column(String)
-    reg_type = Column(String)
-    last_ip = Column(String)
-    ip_history = Column(JSON)
-
-    change_logs = Column(JSON)
-    data = Column(JSON)
-
-    def __init__(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-    class Privacy:
-        pass
-
-    async def get_privacy_settings(self, apply_attrs=True) -> dict:
-        if self and self.privacy is None:
-            self.privacy = "2" * 24
-        privacy_dict = {}
-        convert = {
-            "1": "public",
-            "2": "friends",
-            "3": "private",
-        }
-        for key in self.__dict__.keys():
-            if key in self.privacy_keys.keys():
-                privacy_dict[key] = convert[(self.privacy[self.privacy_keys[key] - 1])]
-                try:
-                    if apply_attrs:
-                        setattr(self, key, privacy_dict[key])
-                except AttributeError:
-                    print(
-                        f'{self}: Failed to set privacy "{privacy_dict[key]}" for key "{key}"'
-                    )
-                except Exception:
-                    pass
-        return privacy_dict
+    @reconstructor
+    def init_on_load(self) -> None:
+        self.update = lambda **kwargs: self.__class__.update(
+            id=self.id, **{k: v for k, v in kwargs.items() if k != "id"}
+        )
+        self.delete = lambda: self.__class__.delete(id=self.id)
+        for name, func in inspect.getmembers(self.__class__, inspect.isfunction):
+            if "id" in func.__code__.co_varnames:
+                self.__dict__[name] = lambda **kwargs: func(
+                    id=self.id, **{k: v for k, v in kwargs.items() if k != "id"}
+                )
 
     @classmethod
-    async def add(cls, **kwargs) -> Self:
-        """
-        Add new user to database.
-
-        Parameters
-        ----------
-        **kwargs
-            Attributes to add. For example, username='new_user'.
-
-        Returns
-        -------
-        Self
-            Added User object.
-
-        Raises
-        ------
-        UserAlreadyExists
-            If user with given id, email or username already exists.
-        """
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            user = User(**kwargs)
-            if user.username and await cls.get(username=user.username):
-                raise exceptions.UserAlreadyExists(
-                    f"User with username @{user.username} already exists"
-                )
-            if user.email and await cls.get(email=user.email):
-                raise exceptions.UserAlreadyExists(
-                    f"User with email {user.email} already exists"
-                )
-            session.add(user)
-            await session.commit()
-            if user.password:
-                await cls.update(user_id=user.user_id, password=user.password)
-
-            if not await ItemList.get(author_id=user.user_id, kind="favorites"):
-                await ItemList.add(
-                    author_id=user.user_id, kind="favorites", name="Favorites"
-                )
-
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(user_id=user.user_id)
-
-    @classmethod
-    async def get(cls, **kwargs) -> Self | None:
-        """
-        Get user by given criteria. If user is not found, returns None.
-
-        Parameters
-        ----------
-        **kwargs
-            Criteria to search user by. For example, user_id=123 or username='admin'.
-
-        Returns
-        -------
-        Self | None
-            User object if found, None if not.
-        """
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            user = (
-                (await session.execute(select(User).filter_by(**kwargs)))
-                .scalars()
-                .first()
-            )
-            if user and not user.following:
-                user.following = []
-        if user:
-            await user.get_privacy_settings()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return user
-
-    @classmethod
-    async def get_all(
-        cls, limit: int = None, offset: int = 0, **kwargs
-    ) -> List[Self] | List[None] | None:
-        """
-        Get all users by given criteria. If no criteria is given, returns all users.
-
-        Parameters
-        ----------
-        limit : int
-            Limit of users to return. If not provided, returns all users.
-        offset : int
-            Offset of users to return. Defaults to 0.
-        **kwargs
-            Criteria to search users by. For example, user_id=123 or username='admin'.
-
-        Returns
-        -------
-        List[Self] | List[None] | None
-            List of User objects if found, empty list if not or None if criteria is not valid.
-        """
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            if limit is not None:
-                users = (
-                    (
-                        await session.execute(
-                            select(User).filter_by(**kwargs).limit(limit).offset(offset)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            else:
-                users = (
-                    (await session.execute(select(User).filter_by(**kwargs)))
-                    .scalars()
-                    .all()
-                )
-        users = [user for user in users if user]
-        for user in users:
-            await user.get_privacy_settings()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return users
-
-    @classmethod
-    async def update(
-        cls, user_id: int = None, bypass_blacklist: bool = False, **kwargs
+    async def add(
+        cls, ignore_crypt: bool = False, ignore_blacklist: bool = True, **kwargs
     ) -> Self:
         """
-        Update existing user in database.
+        Adds a new item to the database.
 
-        Parameters
-        ----------
-        user_id : int
-            ID of user to update. If not provided, uses the id of the current user.
-        **kwargs
-            Attributes to update. For example, username='new_username'.
+        Args:
+            **kwargs: the keyword arguments to pass to the item's constructor
 
-        Returns
-        -------
-        Self
-            Updated User object.
-
-        Raises
-        ------
-        UserNotInitialized
-            If user was not initialized and user_id was not provided.
-        UserNotFound
-            If user with given id wasn't found.
-        UserAlreadyExists
-            If user with given username or email already exists.
+        Returns:
+            The newly created item
         """
         start_at = datetime.now()
-        async with sessions["main"]() as session:
-            if user_id is None and cls.user_id is None:
-                raise exceptions.UserNotInitialized(
-                    "User was not initialized and user_id was not provided"
-                )
-            if user_id is None:
-                user_id = cls.user_id
-            user = (
-                await session.execute(select(User).filter_by(user_id=user_id))
-            ).scalar_one_or_none()
-            if user is None:
-                raise exceptions.UserNotFound(f"User with id {user_id} wasn't found")
-            if (
-                "username" in kwargs
-                and await cls.get(username=kwargs["username"]) is not None
-                and kwargs["username"] != user.username
-            ):
-                raise exceptions.UserAlreadyExists(
-                    f'User with username {kwargs["username"]} already exists'
-                )
-            if "email" in kwargs and await cls.get(email=kwargs["email"]) is not None:
-                raise exceptions.UserAlreadyExists(
-                    f'User with email {kwargs["email"]} already exists'
-                )
-            if "username" in kwargs and len(kwargs["username"]) > 32:
-                raise exceptions.ValueTooLong(
-                    f'Username {kwargs["username"]} is too long'
-                )
-            if "name" in kwargs and len(kwargs["name"]) > 32:
-                raise exceptions.ValueTooLong(f'Name {kwargs["name"]} is too long')
-            if "website_url" in kwargs and len(kwargs["website_url"]) > 128:
-                raise exceptions.ValueTooLong(
-                    f'Website URL {kwargs["website_url"]} is too long'
-                )
-            if "about" in kwargs and len(kwargs["about"]) > 768:
-                raise exceptions.ValueTooLong("About is too long")
-            if "password" in kwargs:
-                if len(kwargs["password"]) > 64:
-                    raise exceptions.ValueTooLong(
-                        f'Password {kwargs["password"]} is too long'
-                    )
-                load_dotenv()
-                kwargs["password"] = (
-                    Fernet(getenv("SECRET_KEY").encode("utf-8"))
-                    .encrypt(user.password.encode("utf-8"))
-                    .decode("utf-8")
-                )
+        async with sessions[
+            cls.__table_args__.get("comment", "main")
+        ].begin() as session:
             for key, value in kwargs.items():
-                try:
-                    blacklist = [
-                        x.upper()
-                        for x in open(
-                            __file__[: __file__.rfind("/")] + f"/blacklists/{key}.txt",
-                            "r",
-                        )
-                        .read()
-                        .splitlines()
-                    ]
-                    if str(value).upper() in blacklist and bypass_blacklist is False:
-                        raise exceptions.BlacklistedValue(
-                            f"Value {value} for key {key} is blacklisted to set"
-                        )
-                except Exception as exc:
-                    if str(exc).startswith("[Errno 2]"):
-                        pass
-                    print(f"Failed to apply blacklist for key {key}: {exc}")
-
+                if not ignore_blacklist and cls._is_value_blacklisted(key, value):
+                    raise database_exc.Blacklisted(key, value)
+                if key in getenv("CRYPT_VALUES", "").split(",") and not ignore_crypt:
+                    kwargs[key] = cls._crypt(value)
+            item = cls(**kwargs)
             for key, value in kwargs.items():
-                setattr(user, key, value)
-            await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(user_id=user_id)
-
-    @classmethod
-    async def generate_token(cls, user_id: int = None, token_len: int = 64) -> str:
-        """
-        Generates a unique token for a given user.
-
-        Parameters
-        ----------
-        user_id : int
-            The ID of the user for whom the token is being generated.
-
-        Returns
-        -------
-        str
-            A unique token associated with the user.
-
-        Raises
-        ------
-        UserNotFound
-            If the user with the given ID does not exist.
-        """
-        start_at = datetime.now()
-        user_id = user_id if user_id is not None else cls.user_id
-        user = await cls.get(user_id=user_id)
-        if user is None:
-            raise exceptions.UserNotFound(f"User with id {user_id} wasn't found")
-
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(), length=32, salt=os.urandom(16), iterations=696969
-        )
-        password = str(uuid4()).encode("utf-8")
-        f = Fernet(base64.urlsafe_b64encode(kdf.derive(password)))
-        encMessage = f.encrypt(
-            (
-                f"{user.user_id}"
-                + "".join(choice(ascii_letters + digits) for _ in range(token_len))
-            ).encode("utf-8")[:token_len][::-1]
-        )
-
-        token = list(encMessage.decode("utf-8"))
-        shuffle(token)
-        token = ("wA" + "".join(token))[:token_len]
-
-        if await cls.get(token=token):  # Possible?
-            return await cls.generate_token(user_id)
-
-        await cls.update(user_id=user_id, token=token)
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return token
-
-    @classmethod
-    async def compare_password(cls, user_id: int, password: str):
-        start_at = datetime.now()
-        user = await cls.get(user_id=user_id)
-        if user is None:
-            raise exceptions.UserNotFound(f"User with id {user_id} wasn't found")
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return (
-            Fernet(getenv("SECRET_KEY").encode("utf-8"))
-            .decrypt(user.password)
-            .decode("utf-8")
-            == password
-        )
-
-    @classmethod
-    async def search(
-        cls, *args, safe_search: bool = True
-    ) -> List[Self] | List[None] | None:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            users = []
-            for arg in args:
-                if arg is None:
-                    continue
-                users.extend(
-                    (
-                        await session.execute(
-                            select(User).where(User.user_id.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                users.extend(
-                    (
-                        await session.execute(
-                            select(User).where(User.username.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                users.extend(
-                    (
-                        await session.execute(
-                            select(User).where(User.name.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            session.expunge_all()
-        if safe_search:
-            for i, user in enumerate(users):
-                if user.hidden or user is None:
-                    users[i] = None
-                    continue
-                users[i] = User(
-                    user_id=user.user_id,
-                    username=user.username,
-                    name=user.name,
-                    created_at=user.created_at,
-                    active_at=user.active_at,
-                    avatar_url=user.avatar_url,
-                    banner_url=user.banner_url,
-                    website_url=user.website_url,
-                    bio=user.bio,
-                    groups=user.groups,
-                    following=user.following,
-                    followers=user.followers,
-                    subscribers=user.subscribers,
-                    subscribed=user.subscribed,
-                    location=user.location,
-                    about=user.about,
-                    gender=user.gender,
-                    birthday=user.birthday,
-                )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return users[:50]
-
-    def __repr__(self) -> str:
-        return f'<User #{self.user_id} ({", ".join([str(self.name), str(self.username), str(self.email)])})>'
-
-
-class Post(Base):
-    __tablename__ = "posts"
-    __table_args__ = {
-        "comment": "main",
-    }
-
-    post_id = Column(
-        Integer, Identity(start=1, increment=1), primary_key=True, unique=True
-    )
-    parent_id = Column(Integer)
-    author_id = Column(Integer)
-    kind = Column(String)  # probably something like 'comment', 'review', 'forum'
-    deleted = Column(Boolean)
-    hidden = Column(Boolean)
-
-    title = Column(String)
-    content = Column(String)
-    tags = Column(JSON)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    update_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    upvotes = Column(JSON)
-    downvotes = Column(JSON)
-    reactions = Column(JSON)
-    views = Column(JSON)
-
-    @classmethod
-    async def add(cls, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            post = Post(**kwargs)
-            session.add(post)
-            await session.commit()
-
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(post_id=post.post_id)
-
-    @classmethod
-    async def get(cls, **kwargs) -> Self | None:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            post = (
-                (await session.execute(select(Post).filter_by(**kwargs)))
-                .scalars()
-                .first()
-            )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return post
-
-    @classmethod
-    async def get_all(
-        cls, limit: int = None, offset: int = 0, **kwargs
-    ) -> List[Self] | List[None] | None:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            if limit is not None:
-                posts = (
-                    session.query(Post)
-                    .filter_by(**kwargs)
-                    .limit(limit)
-                    .offset(offset)
-                    .all()
-                )
-            else:
-                posts = session.query(Post).filter_by(**kwargs).all()
-            session.expunge_all()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return posts
-
-    @classmethod
-    async def update(cls, post_id: int = None, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            if post_id is None:
-                post_id = cls.post_id
-            post = session.query(Post).filter_by(post_id=post_id).first()
-            if post is None:
-                raise exceptions.PostNotFound(f"Post with id {post_id} wasn't found")
-            for key, value in kwargs.items():
-                setattr(post, key, value)
-            session.commit()
-            session.expunge_all()
-            session.close()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(post_id=post.post_id)
-
-    @classmethod
-    async def search(cls, *args, safe_search: bool = True) -> List[Self]:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            posts = []
-            for arg in args:
-                if arg is None:
-                    continue
-                posts.extend(
-                    (
-                        await session.execute(
-                            select(Post).where(Post.post_id.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                posts.extend(
-                    (
-                        await session.execute(
-                            select(Post).where(Post.title.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                posts.extend(
-                    (
-                        await session.execute(
-                            select(Post).where(Post.content.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                posts.extend(
-                    (
-                        await session.execute(
-                            select(Post).where(Post.tags.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                posts.extend(
-                    (
-                        await session.execute(
-                            select(Post).where(Post.author_id.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                posts.extend(
-                    (
-                        await session.execute(
-                            select(Post).where(Post.parent_id.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            session.expunge_all()
-        if safe_search:
-            posts = [post for post in posts if not post.deleted and not post.hidden]
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return posts
-
-    def __repr__(self) -> str:
-        return f"<Post #{self.post_id} [{self.author_id}]>"
-
-
-class ItemList(Base):
-    __tablename__ = "lists"
-    __table_args__ = {
-        "comment": "main",
-    }
-
-    list_id = Column(
-        Integer, Identity(start=1, increment=1), primary_key=True, unique=True
-    )
-    parent_id = Column(Integer)
-    author_id = Column(Integer)
-    deleted = Column(Boolean)
-    hidden = Column(Boolean)
-    uniq_id = Column(String, unique=True)
-
-    name = Column(String)
-    description = Column(String)
-    kind = Column(String)
-    items = Column(JSON)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    edit_at = Column(DateTime(timezone=True), server_default=None)
-    update_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    upvotes = Column(JSON)
-    downvotes = Column(JSON)
-    reactions = Column(JSON)
-
-    followers = Column(JSON)
-
-    @classmethod
-    async def add(cls, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            list = ItemList(**kwargs)
-            session.add(list)
-            await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(list_id=list.list_id)
-
-    @classmethod
-    async def get(cls, **kwargs) -> Self | None:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            list = (
-                (await session.execute(select(ItemList).filter_by(**kwargs)))
-                .scalars()
-                .first()
-            )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return list
-
-    @classmethod
-    async def get_all(
-        cls, limit: int = None, offset: int = 0, **kwargs
-    ) -> List[Self] | List[None] | None:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            if limit is not None:
-                lists = (
-                    (
-                        await session.execute(
-                            select(ItemList)
-                            .filter_by(**kwargs)
-                            .limit(limit)
-                            .offset(offset)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            else:
-                lists = (
-                    (await session.execute(select(ItemList).filter_by(**kwargs)))
-                    .scalars()
-                    .all()
-                )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return lists
-
-    @classmethod
-    async def update(cls, list_id: int = None, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            if list_id is None:
-                list_id = cls.list_id
-            list = session.query(ItemList).filter_by(list_id=list_id).first()
-            if list is None:
-                raise exceptions.ListNotFound(f"List with id {list_id} wasn't found")
-            for key, value in kwargs.items():
-                setattr(list, key, value)
-            await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(list_id=list.list_id)
-
-    @classmethod
-    async def search(
-        cls, *args, safe_search: bool = True
-    ) -> List[Self] | List[None] | None:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            lists = []
-            for arg in args:
-                if arg is None:
-                    continue
-                lists.extend(
-                    (
-                        await session.execute(
-                            select(ItemList).where(ItemList.list_id.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                lists.extend(
-                    (
-                        await session.execute(
-                            select(ItemList).where(ItemList.uniq_id.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                lists.extend(
-                    (
-                        await session.execute(
-                            select(ItemList).where(ItemList.name.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                lists.extend(
-                    (
-                        await session.execute(
-                            select(ItemList).where(
-                                ItemList.description.ilike(f"%{arg}%")
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            session.expunge_all()
-        if safe_search:
-            lists = [list for list in lists if not list.deleted and not list.hidden]
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return lists
-
-    def __repr__(self) -> str:
-        return f"<ItemList #{self.list_id} [{self.author_id}]>"
-
-
-class Item(Base):
-    __tablename__ = "items"
-    __table_args__ = {"comment": "main"}
-
-    item_id = Column(
-        Integer, Identity(start=1, increment=1), primary_key=True, unique=True
-    )
-    mal_id = Column(Integer)
-    kind = Column(String)
-
-    shiki_data = Column(JSON)
-    custom_data = Column(JSON)
-    edited_at = Column(DateTime(timezone=True))
-    data_refresh = Column(DateTime(timezone=True))
-
-    favorited_by = Column(JSON)
-    in_lists = Column(JSON)
-
-    ratings = Column(JSON)
-    upvotes = Column(JSON)
-    downvotes = Column(JSON)
-
-    deleted = Column(Boolean)
-
-    @classmethod
-    async def add(cls, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            item = Item(**kwargs)
+                setattr(item, key, value)
             session.add(item)
             await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(item_id=item.item_id)
+        db_debug(f"ADD {item}")
+        return item
 
     @classmethod
-    async def get(cls, **kwargs) -> Self | None:
+    async def get(cls, **filters) -> Self | None:
+        """
+        Gets an item from the database.
+
+        Args:
+            **filters: the keyword arguments to filter by
+
+        Returns:
+            The item if found, None otherwise
+        """
         start_at = datetime.now()
-        async with sessions["main"]() as session:
+        async with sessions[
+            cls.__table_args__.get("comment", "main")
+        ].begin() as session:
             item = (
-                (await session.execute(select(Item).filter_by(**kwargs)))
+                (await session.execute(select(cls).filter_by(**filters)))
                 .scalars()
                 .first()
             )
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        db_debug(f"GET {item}")
         return item
 
     @classmethod
-    async def get_all(
-        cls, limit: int = None, offset: int = 0, **kwargs
-    ) -> List[Self] | List[None] | None:
+    async def get_chunk(
+        cls, limit: int = 100, offset: int = 0, **filters
+    ) -> List[Self]:
+        """
+        Gets a chunk of items from the database.
+
+        Args:
+            limit (int, optional): the maximum number of items to return. Defaults to 100.
+            offset (int, optional): the offset to start from. Defaults to 0.
+            **filters: the keyword arguments to filter by
+
+        Returns:
+            A list of items
+        """
         start_at = datetime.now()
-        async with sessions["main"]() as session:
-            if limit is not None:
-                items = (
-                    (
-                        await session.execute(
-                            select(Item).filter_by(**kwargs).limit(limit).offset(offset)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            else:
-                items = (
-                    (await session.execute(select(Item).filter_by(**kwargs)))
-                    .scalars()
-                    .all()
-                )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return items
-
-    @classmethod
-    async def update(cls, item_id: int = None, mal_id: int = None, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            if mal_id is not None:
-                item = (
-                    (await session.execute(select(Item).filter_by(mal_id=mal_id)))
-                    .scalars()
-                    .first()
-                )
-            else:
-                if item_id is None:
-                    item_id = cls.item_id
-                item = (
-                    (await session.execute(select(Item).filter_by(item_id=item_id)))
-                    .scalars()
-                    .first()
-                )
-            if item is None:
-                raise exceptions.ItemNotFound(f"Item with id {item_id} wasn't found")
-            for key, value in kwargs.items():
-                setattr(item, key, value)
-            await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(item_id=item.item_id)
-
-    @classmethod
-    async def search(cls, *args) -> List[Self]:
-        start_at = datetime.now()
-        async with sessions["main"]() as session:
-            items = []
-            for arg in args:
-                if arg is None:
-                    continue
-                items.extend(
-                    (
-                        await session.execute(
-                            select(Item).where(Item.mal_id.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                items.extend(
-                    (
-                        await session.execute(
-                            select(Item).where(Item.name.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                items.extend(
-                    (
-                        await session.execute(
-                            select(Item).where(Item.description.ilike(f"%{arg}%"))
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            session.expunge_all()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return items
-
-    def __repr__(self) -> str:
-        return (
-            f"<Item #{self.item_id}"
-            + (f" {self.kind}/{self.mal_id}" if self.mal_id else self.kind)
-            + ">"
-        )
-
-
-class WebVisualNovel(Base):
-    __tablename__ = "visual_novels"
-    __table_args__ = {
-        "comment": "vn",
-    }
-
-    visual_novel_id = Column(
-        Integer, Identity(start=1, increment=1), primary_key=True, unique=True
-    )
-    author_id = Column(Integer)
-    unic_id = Column(String, unique=True, nullable=False)
-    deleted = Column(Boolean)
-    hidden = Column(Boolean)
-
-    aliases = Column(JSON)
-
-    name = Column(String)
-    description = Column(String)
-    kind = Column(String)
-    data = Column(JSON)
-    status = Column(String)
-    version = Column(String)
-    screenshots = Column(JSON)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    edit_at = Column(DateTime(timezone=True), server_default=None)
-    update_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    upvotes = Column(JSON)
-    downvotes = Column(JSON)
-    reactions = Column(JSON)
-
-    views = Column(Integer, default=0)
-
-    max_text_size_mb = Column(Integer, default=12)
-    sprite_max_size_mb = Column(Integer, default=16)
-    sound_max_size_mb = Column(Integer, default=16)
-    conf_file_max_size_mb = Column(Integer, default=16)
-    conf_files = Column(JSON)
-    text_files = Column(JSON)
-    sprite_files = Column(JSON)
-    sound_files = Column(JSON)
-
-    @classmethod
-    async def add(cls, **kwargs) -> Self | None:
-        start_at = datetime.now()
-        async with sessions["vn"]() as session:
-            item = (
-                (await session.execute(select(WebVisualNovel).filter_by(**kwargs)))
-                .scalars()
-                .first()
-            )
-            if item.unic_id is None:
-                item.unic_id = str(str(uuid4()).upper()[-12:])
-                session.add(item)
-                await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return item
-
-    @classmethod
-    async def get(cls, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with sessions["vn"]() as session:
-            item = (
-                (await session.execute(select(WebVisualNovel).filter_by(**kwargs)))
-                .scalars()
-                .first()
-            )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return item
-
-    @classmethod
-    async def get_all(cls, limit: int = None, offset: int = 0, **kwargs) -> List[Self]:
-        start_at = datetime.now()
-        async with sessions["vn"]() as session:
-            if limit is not None:
-                items = (
-                    (
-                        await session.execute(
-                            select(WebVisualNovel)
-                            .filter_by(**kwargs)
-                            .limit(limit)
-                            .offset(offset)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            else:
-                items = (
-                    (await session.execute(select(WebVisualNovel).filter_by(**kwargs)))
-                    .scalars()
-                    .all()
-                )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return items
-
-    @classmethod
-    async def update(cls, item_id: int, **kwargs) -> Self:
-        start_at = datetime.now()
-        async with sessions["vn"]() as session:
-            item = (
+        async with sessions[
+            cls.__table_args__.get("comment", "main")
+        ].begin() as session:
+            items = (
                 (
                     await session.execute(
-                        select(WebVisualNovel).filter_by(visual_novel_id=item_id)
+                        select(cls).filter_by(**filters).limit(limit).offset(offset)
                     )
                 )
-                .scalars()
-                .first()
-            )
-            if item is None:
-                raise exceptions.ItemNotFound(f"Item with id {item_id} wasn't found")
-            for key, value in kwargs.items():
-                setattr(item, key, value)
-            await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(visual_novel_id=item.visual_novel_id)
-
-    @classmethod
-    async def search(cls, *args, safe_search: bool = True) -> List[Self]:
-        start_at = datetime.now()
-        async with sessions["vn"]() as session:
-            items = []
-            for arg in args:
-                items.extend(
-                    (
-                        await session.execute(
-                            select(WebVisualNovel).where(
-                                WebVisualNovel.unic_id.ilike(f"%{arg}%")
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                items.extend(
-                    (
-                        await session.execute(
-                            select(WebVisualNovel).where(
-                                WebVisualNovel.name.ilike(f"%{arg}%")
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                items.extend(
-                    (
-                        await session.execute(
-                            select(WebVisualNovel).where(
-                                WebVisualNovel.description.ilike(f"%{arg}%")
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            session.expunge_all()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return items
-
-    def __repr__(self) -> str:
-        return f"<WebVisualNovel #{self.visual_novel_id} [{self.author_id}]>"
-
-
-class CDNItem(Base):
-    __tablename__ = "cdn_items"
-    __table_args__ = {"comment": "cdn"}
-
-    item_id = Column(
-        Integer, Identity(start=1, increment=1), primary_key=True, unique=True
-    )
-    key = Column(String, nullable=False)
-    short_key = Column(String)
-    deleted = Column(Boolean)
-
-    name = Column(String)
-    direct_url = Column(String)
-
-    created_by = Column(Integer)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_view_at = Column(DateTime(timezone=True), server_default=None)
-    delete_at = Column(DateTime(timezone=True), server_default=None)
-
-    type = Column(String)
-    size_kb = Column(Integer)
-
-    views = Column(Integer, default=0)
-
-    @classmethod
-    async def add(cls, **kwargs) -> Self | None:
-        start_at = datetime.now()
-        async with sessions["cdn"]() as session:
-            item = CDNItem(**kwargs)
-            while item.key is None:
-                key = str(uuid4()).replace("-", "")
-                if await cls.get(key=key) is None:
-                    item.key = key
-            session.add(item)
-            await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return item
-
-    @classmethod
-    async def get(cls, **kwargs) -> Self | None:
-        start_at = datetime.now()
-        async with sessions["cdn"]() as session:
-            item = (
-                (await session.execute(select(CDNItem).filter_by(**kwargs)))
-                .scalars()
-                .first()
-            )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return item
-
-    @classmethod
-    async def get_all(cls, **kwargs) -> List[Self] | List[None] | None:
-        start_at = datetime.now()
-        async with sessions["cdn"]() as session:
-            items = (
-                (await session.execute(select(CDNItem).filter_by(**kwargs)))
                 .scalars()
                 .all()
             )
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        db_debug(f"GET CHUNK {items}")
         return items
 
     @classmethod
-    async def update(cls, item_id: int, **kwargs) -> Self:
+    async def get_all(cls, **filters) -> List[Self]:
+        """
+        Gets all items from the database.
+
+        Args:
+            **filters: the keyword arguments to filter by
+
+        Returns:
+            A list of all items
+        """
+        return await cls.get_chunk(limit=-1, **filters)
+
+    @classmethod
+    async def update(
+        cls,
+        id: int = None,
+        ignore_crypt: bool = False,
+        ignore_blacklist: bool = False,
+        **kwargs,
+    ) -> Self:
+        """
+        Updates an item in the database.
+
+        Args:
+            id (int, optional): The id of the item to update. Defaults to None.
+            ignore_crypt (bool, optional): Whether to ignore encryption. Defaults to False.
+            ignore_blacklist (bool, optional): Whether to ignore blacklisting. Defaults to False.
+            **kwargs: The keyword arguments to update with
+
+        Returns:
+            The updated item if found, None otherwise
+        """
         start_at = datetime.now()
-        async with sessions["cdn"]() as session:
-            item = (
-                (await session.execute(select(CDNItem).filter_by(item_id=item_id)))
-                .scalars()
-                .first()
+        if not id and hasattr(cls, "id"):
+            id = cls.id
+        if not id:
+            raise database_exc.NoID()
+        async with sessions[
+            cls.__table_args__.get("comment", "main")
+        ].begin() as session:
+            cls = (
+                (await session.execute(select(cls).filter_by(id=id))).scalars().first()
             )
-            if item is None:
-                raise exceptions.ItemNotFound(f"Item with id {item_id} wasn't found")
             for key, value in kwargs.items():
-                setattr(item, key, value)
+                if getattr(cls, key) == value:
+                    continue
+                if not ignore_blacklist and cls._is_value_blacklisted(key, value):
+                    raise database_exc.Blacklisted(key, value)
+                if key in getenv("CRYPT_VALUES", "").split(",") and not ignore_crypt:
+                    value = cls._crypt(value)
+                old_value = getattr(cls, key)
+                if not isinstance(old_value, (int, float, str, bool, type(None))):
+                    old_value = str(old_value)
+                await AuditLog.add(
+                    old_value=old_value,
+                    new_value=value
+                    if isinstance(value, (int, float, str, bool, type(None)))
+                    else str(value),
+                    key=key,
+                    origin_id=cls.id,
+                    origin_table=cls.__tablename__,
+                )
+                setattr(cls, key, value)
             await session.commit()
         perfomance.all += [(datetime.now() - start_at).total_seconds()]
-        return await cls.get(item_id=item.item_id)
+        db_debug(f"UPDATE {cls}")
+        return cls
+
+    @classmethod
+    async def search(
+        cls,
+        query: str,
+        limit: int = -1,
+        offset: int = 0,
+        safe: bool = True,
+        search_all: bool = False,
+        **filters,
+    ) -> List[Self]:
+        """
+        Searches for items in the database that match the given query.
+
+        Args:
+            query (str): The search query string.
+            limit (int, optional): The maximum number of items to return. Defaults to 100.
+            offset (int, optional): The offset to start the search from. Defaults to 0.
+            safe (bool, optional): Whether to restrict search to safe fields. Defaults to True.
+            search_all (bool, optional): Whether to search all fields regardless of their searchability. Defaults to False.
+            **filters: Additional filters to apply to the search.
+
+        Returns:
+            List[Self]: A list of items that match the search criteria.
+        """
+        start_at = datetime.now()
+        async with sessions[
+            cls.__table_args__.get("comment", "main")
+        ].begin() as session:
+            keys = []
+            for key in cls.__dict__.keys():
+                if key.startswith("_") or not cls.__dict__[key]:
+                    continue
+                data = cls.__dict__[key]
+                info = {}
+                if "info" in data.__dict__.keys():
+                    info = data.__dict__["info"]
+                if not info.get("searchable", False) and not search_all:
+                    continue
+                elif not info.get("safe", False) and safe:
+                    continue
+                keys += [key]
+            items = []
+            for key in keys:
+                items.extend(
+                    (
+                        await session.execute(
+                            select(cls)
+                            .where(getattr(cls, key).ilike(f"%{query}%"))
+                            .filter_by(**filters)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            items = list(set(items))
+            items = sorted(
+                items,
+                key=lambda item: max(
+                    cls.similarity(getattr(item, key), query) for key in keys
+                ),
+                reverse=True,
+            )
+            items = items[offset : (offset + limit) if limit != -1 else len(items)]
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        db_debug(f"SEARCH {items}")
+        return items
+
+    @classmethod
+    async def delete(cls, id: int = None, iknowwhatimdoing: bool = False, **filters):
+        """
+        Deletes an item from the database.
+
+        Args:
+            id (int, optional): The id of the item to delete. Defaults to None.
+            **filters: Additional filters to apply to the deletion.
+
+        Returns:
+            The deleted item if found, None otherwise
+        """
+        if not iknowwhatimdoing:
+            raise database_exc.NotIknowWhatImDoing()
+        start_at = datetime.now()
+        if not id:
+            id = cls.id if cls.id else None
+        if not id:
+            raise database_exc.NoID()
+        async with sessions[
+            cls.__table_args__.get("comment", "main")
+        ].begin() as session:
+            cls = (
+                (await session.execute(select(cls).filter_by(id=id))).scalars().first()
+            )
+            await session.delete(cls)
+            await session.commit()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        db_debug(f"DELETE {cls}")
+        return cls
+
+    @staticmethod
+    def similarity(a: str, b: str) -> float:
+        return sum(1 for x, y in zip(str(a), str(b)) if x == y) / max(
+            len(str(a)), len(str(b))
+        )
+
+    @classmethod
+    async def _filter_by(
+        cls, items: List[Self], strict: bool = False, **filters
+    ) -> List[Self]:
+        result_items = []
+        for item in items:
+            matches = True
+            for key, value in filters.items():
+                item_value = getattr(item, key, "")
+                if strict:
+                    if item_value != value:
+                        matches = False
+                        break
+                else:
+                    if cls.similarity(item_value, value) < 0.5:
+                        matches = False
+                        break
+            if matches:
+                result_items.append(item)
+        return result_items
+
+    @classmethod
+    async def _sort_by(
+        cls, items: List[Self], key: str, order: Literal["asc", "desc"] = "asc"
+    ) -> List[Self]:
+        return sorted(items, key=lambda x: getattr(x, key), reverse=order == "desc")
+
+    @classmethod
+    def _crypt(cls, value: str, crypt_key: str = None) -> str:
+        if not crypt_key:
+            crypt_key = getenv("CRYPT_KEY", None)
+        if not crypt_key:
+            raise database_exc.NoCryptKey()
+        crypt = Fernet(crypt_key.encode("utf-8"))
+        return crypt.encrypt(value.encode()).decode()
+
+    @classmethod
+    def _decrypt(cls, value: str, crypt_key: str = None) -> str:
+        if not crypt_key:
+            crypt_key = getenv("CRYPT_KEY", None)
+        if not crypt_key:
+            raise database_exc.NoCryptKey()
+        crypt = Fernet(crypt_key.encode("utf-8"))
+        return crypt.decrypt(value.encode()).decode()
+
+    @classmethod
+    def _compare(
+        cls, decrypted_value: str, encrypted_value: str, crypt_key: str = None
+    ) -> bool:
+        if not crypt_key:
+            crypt_key = getenv("CRYPT_KEY", None)
+        if not crypt_key:
+            raise database_exc.NoCryptKey()
+        crypt = Fernet(crypt_key.encode("utf-8"))
+        return crypt.decrypt(encrypted_value.encode()).decode() == decrypted_value
+
+    @classmethod
+    def _generate_secret(cls, length: int = 32) -> str:
+        secret = "".join(choice(ascii_letters + digits) for _ in range(length))
+        secret = secret[0:3] + "." + secret[5:]
+        if len(secret) >= 32:
+            secret = secret[0:28] + "." + secret[30:]
+        return secret
+
+    @classmethod
+    def _is_value_blacklisted(cls, key: str, value: str) -> bool:
+        blacklist_file = f"./core/database/blacklists/{key}.txt"
+        if os.path.exists(blacklist_file):
+            with open(blacklist_file) as f:
+                for line in f:
+                    if line.strip() == str(value):
+                        return True
+
+        return False
+
+    def decrypted(self) -> Self:
+        """
+        Returns a new instance of the item with all values decrypted.
+
+        This method takes all values that are in the CRYPT_VALUES environment variable
+        and decrypts them, returning a new instance of the item with the decrypted values.
+
+        Returns:
+            Self: A new instance of the item with decrypted values.
+        """
+        for key, value in self.__dict__.items():
+            if key in getenv("CRYPT_VALUES", "").split(","):
+                self.__dict__[key] = self._decrypt(value)
+        return self
+
+    async def get_audit(self) -> Dict[str, List["AuditLog"]]:
+        """
+        Gets all audit logs for the current item.
+
+        This method returns a dictionary with all keys being the column names of the item
+        and the values being lists of AuditLog objects.
+
+        Returns:
+            Dict[str, List["AuditLog"]]: A dictionary with all audit logs for the item.
+        """
+        for key in self.__dict__.keys():
+            if key.startswith("_"):
+                continue
+            setattr(
+                self.audit,
+                key,
+                await AuditLog.get_all(
+                    origin_table=self.__tablename__, origin_id=self.id, key=key
+                ),
+            )
+        db_debug(f"GET AUDIT {self.audit}")
+        return self.audit
 
     def __repr__(self) -> str:
-        return (
-            f'<CDNItem #{self.item_id} ("/{self.key}'
-            + (f'", "/{self.short_key}")' if self.short_key else '")')
-            + ">"
+        return f"<{self.__class__.__name__} {self.id}>"
+
+    def __int__(self) -> int:
+        return self.id or 0
+
+
+class ServerSetting(BaseItem):
+    __tablename__ = "server_settings"
+    __table_args__ = {"comment": "main"}
+
+    key = Column(String, unique=True)
+    value = Column(String)
+
+
+class User(BaseItem):
+    __tablename__ = "users"
+    __table_args__ = {"comment": "main"}
+
+    username = Column(
+        String(48), unique=True, nullable=False, info={"searchable": True, "safe": True}
+    )
+    name = Column(String(48), info={"searchable": True, "safe": True})
+    email = Column(String(128), unique=True)
+    password = Column(String(256))
+    reg_type = Column(String(32))
+    email_confirm_code = Column(String(64))
+    groups = Column(JSON)
+    email_confirmed = Column(Boolean)
+    reg_ip = Column(String(48))
+
+    @reconstructor
+    def init_on_load(self) -> None:
+        super().init_on_load()
+        self.get_sessions = lambda: self.__class__.get_sessions(id=self.id)
+        self.create_session = lambda **kwargs: self.__class__.create_session(
+            cls=self, id=self.id, **kwargs
         )
+
+    async def create_session(cls, id: int = None, **kwargs) -> "Session":
+        start_at = datetime.now()
+        if not id and hasattr(cls, "id"):
+            id = cls.id
+        if not id:
+            raise database_exc.NoID()
+        async with sessions[
+            cls.__table_args__.get("comment", "main")
+        ].begin() as session:
+            _ = Session(user_id=id, token=cls._generate_secret(72), **kwargs)
+            session.add(_)
+            await session.commit()
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return _
+
+    @classmethod
+    async def get_sessions(cls, id: int = None) -> List["Session"]:
+        start_at = datetime.now()
+        if not id and hasattr(cls, "id"):
+            id = cls.id
+        if not id:
+            raise database_exc.NoID()
+        async with sessions[
+            cls.__table_args__.get("comment", "main")
+        ].begin() as session:
+            _ = (
+                (await session.execute(select(Session).filter_by(user_id=id)))
+                .scalars()
+                .all()
+            )
+        perfomance.all += [(datetime.now() - start_at).total_seconds()]
+        return _
+
+
+class Session(BaseItem):
+    __tablename__ = "sessions"
+    __table_args__ = {"comment": "main"}
+
+    user_id = Column(Integer, ForeignKey(User.id), nullable=False)
+    token = Column(String(256), nullable=False)
+    ip = Column(String(32))
+    user_agent = Column(String(256))
+    last_used = Column(DateTime(timezone=True))
+    platform = Column(String(32))
+    country = Column(String(32))
+    region = Column(String(32))
+    city = Column(String(32))
+    method = Column(String(32))
+    third_party_oauth = Column(String(256))
+
+    @classmethod
+    async def get_user(cls, token: str) -> "User":
+        session = await Session.get(token=token)
+        if not session or session.is_deleted:
+            return None
+        return await User.get(id=session.user_id)
+
+
+class AuditLog(BaseItem):
+    __tablename__ = "audit_logs"
+    __table_args__ = {"comment": "main"}
+
+    updated_at = None
+    is_deleted = None
+    origin_table = Column(String(48), nullable=False, info={"searchable": True})
+    origin_id = Column(Integer, nullable=False, info={"searchable": True})
+    key = Column(String(64), nullable=False, info={"searchable": True})
+    old_value = Column(String(256), info={"searchable": True})
+    new_value = Column(String(256), info={"searchable": True})
+
+    @reconstructor
+    def init_on_load(self) -> None:
+        super().init_on_load()
+        self.search = lambda **kwargs: self.__class__.search(
+            safe=False if "safe" not in kwargs else kwargs["safe"],
+            **{k: v for k, v in kwargs.items() if k != "safe"},
+        )
+
+    @classmethod
+    async def add(cls, **kwargs):
+        await super().add(**kwargs)
+        await cls._delete_old_audits(
+            kwargs["key"], kwargs["origin_table"], kwargs["origin_id"]
+        )
+
+    @classmethod
+    async def _delete_old_audits(cls, key, origin_table, origin_id):
+        async with sessions[cls.__table_args__["comment"]].begin() as session:
+            result = await session.execute(
+                select(cls)
+                .filter_by(key=key, origin_table=origin_table, origin_id=origin_id)
+                .order_by(cls.id.desc())
+            )
+            audits = result.scalars().all()
+            if len(audits) > int(getenv("MAX_AUDITS_PER_ITEM", 4)):
+                for audit in audits[int(getenv("MAX_AUDITS_PER_ITEM", 4)) :]:
+                    await session.delete(audit)
+            await session.commit()
 
 
 async def create_tables():
@@ -1409,11 +631,10 @@ async def create_tables():
                 os.mkdir("./databases")
             async with engine.begin() as conn:
                 for table in Base.metadata.sorted_tables:
-                    if table.comment != name:
-                        continue
-                    await conn.run_sync(table.create, checkfirst=True)
+                    if table.comment == name:
+                        await conn.run_sync(table.create, checkfirst=True)
     except Exception as exc:
-        print(exc)
+        print("Error while creating tables:", exc)
 
 
 def create_db():

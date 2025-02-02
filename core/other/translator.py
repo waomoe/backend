@@ -51,9 +51,11 @@ class Translator:
                         line[line.index("=") + 1 :]
                         .replace("\\n", "\n")
                         .replace("\\t", "\t")
+                        .replace("\\\\", "\\")
+                        .replace("\\r", "\r")
                     )
                     while translated.endswith("\n"):
-                        translated = translated[:-2]
+                        translated = translated[:-1]
                     return translated
         if language.upper() != "EN":
             return self.translate_string(key, "EN")
