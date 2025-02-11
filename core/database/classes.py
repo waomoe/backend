@@ -10,6 +10,7 @@ from sqlalchemy import (
     Identity,
     ForeignKey,
 )
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, reconstructor
 from sqlalchemy.future import select
@@ -65,11 +66,47 @@ class PerfomanceMeter:
             )
 
 
+    def wrapper(_owner, func):
+        async def wrapper(self, *args, **kwargs):
+            try:
+                start = datetime.now()
+                try:
+                    result = await func(self, *args, **kwargs)
+                finally:
+                    _owner.all.append((datetime.now() - start).total_seconds() * 1000)
+                return result
+            except OperationalError as exc:
+                if "no such column:" in str(exc):
+                    table = [x.replace("FROM ", "") for x in str(exc).splitlines() if "FROM " in x][0].strip()
+                    column = str(exc).splitlines()[0].split(" ")[-1].strip()
+                    for name, engine in engines.items():
+                        async with engine.connect() as connection:
+                            for _table in Base.metadata.sorted_tables:
+                                if _table.comment == name and str(_table) == table:
+                                    for _column in _table.columns:
+                                        if str(_column) == column:
+                                            column_name = str(_column.compile(dialect=engine.dialect)).split(".")[-1]
+                                            column_type = _column.type.compile(engine.dialect)
+                                            await connection.exec_driver_sql('ALTER TABLE %s ADD COLUMN %s %s' % (table, column_name, column_type))
+                                            return await func(self, *args, **kwargs)
+        wrapper.__name__ = func.__name__
+        wrapper.__qualname__ = func.__qualname__
+        wrapper.__annotations__ = func.__annotations__
+        wrapper.__doc__ = func.__doc__
+        return wrapper
+
+
 perfomance = PerfomanceMeter()
+
 
 def db_debug(*args, **kwargs):
     if os.getenv("DB_DEBUG", False):
         logger.debug(*args, **kwargs)
+
+
+class ExpandableJSONColumn:
+    def add(self, **kwargs):
+        ...
 
 
 class BaseItem(Base):
@@ -113,6 +150,7 @@ class BaseItem(Base):
                 )
 
     @classmethod
+    @perfomance.wrapper
     async def add(
         cls, ignore_crypt: bool = False, ignore_blacklist: bool = True, **kwargs
     ) -> Self:
@@ -125,25 +163,31 @@ class BaseItem(Base):
         Returns:
             The newly created item
         """
-        start_at = datetime.now()
         async with sessions[
             cls.__table_args__.get("comment", "main")
         ].begin() as session:
             for key, value in kwargs.items():
                 if not ignore_blacklist and cls._is_value_blacklisted(key, value):
                     raise database_exc.Blacklisted(key, value)
-                if key in getenv("CRYPT_VALUES", "").split(",") and not ignore_crypt:
+                try:
+                    data = cls.__class__.__dict__[key].__dict__
+                except KeyError:
+                    data = cls.__dict__[key].__dict__
+                info = {}
+                if "info" in data.keys():
+                    info = data["info"]
+                if ((key in getenv("CRYPT_VALUES", "").split(",")) or info.get("crypt", False)) and not ignore_crypt:
                     kwargs[key] = cls._crypt(value)
             item = cls(**kwargs)
             for key, value in kwargs.items():
                 setattr(item, key, value)
             session.add(item)
             await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         db_debug(f"ADD {item}")
         return item
 
     @classmethod
+    @perfomance.wrapper
     async def get(cls, **filters) -> Self | None:
         """
         Gets an item from the database.
@@ -154,7 +198,6 @@ class BaseItem(Base):
         Returns:
             The item if found, None otherwise
         """
-        start_at = datetime.now()
         async with sessions[
             cls.__table_args__.get("comment", "main")
         ].begin() as session:
@@ -163,11 +206,11 @@ class BaseItem(Base):
                 .scalars()
                 .first()
             )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         db_debug(f"GET {item}")
         return item
 
     @classmethod
+    @perfomance.wrapper
     async def get_chunk(
         cls, limit: int = 100, offset: int = 0, **filters
     ) -> List[Self]:
@@ -182,7 +225,6 @@ class BaseItem(Base):
         Returns:
             A list of items
         """
-        start_at = datetime.now()
         async with sessions[
             cls.__table_args__.get("comment", "main")
         ].begin() as session:
@@ -195,11 +237,11 @@ class BaseItem(Base):
                 .scalars()
                 .all()
             )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         db_debug(f"GET CHUNK {items}")
         return items
 
     @classmethod
+    @perfomance.wrapper
     async def get_all(cls, **filters) -> List[Self]:
         """
         Gets all items from the database.
@@ -213,6 +255,7 @@ class BaseItem(Base):
         return await cls.get_chunk(limit=-1, **filters)
 
     @classmethod
+    @perfomance.wrapper
     async def update(
         cls,
         id: int = None,
@@ -232,7 +275,6 @@ class BaseItem(Base):
         Returns:
             The updated item if found, None otherwise
         """
-        start_at = datetime.now()
         if not id and hasattr(cls, "id"):
             id = cls.id
         if not id:
@@ -248,7 +290,14 @@ class BaseItem(Base):
                     continue
                 if not ignore_blacklist and cls._is_value_blacklisted(key, value):
                     raise database_exc.Blacklisted(key, value)
-                if key in getenv("CRYPT_VALUES", "").split(",") and not ignore_crypt:
+                try:
+                    data = cls.__class__.__dict__[key].__dict__
+                except KeyError:
+                    data = cls.__dict__[key].__dict__
+                info = {}
+                if "info" in data.keys():
+                    info = data["info"]
+                if ((key in getenv("CRYPT_VALUES", "").split(",")) or info.get("crypt", False)) and not ignore_crypt:
                     value = cls._crypt(value)
                 old_value = getattr(cls, key)
                 if not isinstance(old_value, (int, float, str, bool, type(None))):
@@ -264,11 +313,11 @@ class BaseItem(Base):
                 )
                 setattr(cls, key, value)
             await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         db_debug(f"UPDATE {cls}")
         return cls
 
     @classmethod
+    @perfomance.wrapper
     async def search(
         cls,
         query: str,
@@ -292,7 +341,6 @@ class BaseItem(Base):
         Returns:
             List[Self]: A list of items that match the search criteria.
         """
-        start_at = datetime.now()
         async with sessions[
             cls.__table_args__.get("comment", "main")
         ].begin() as session:
@@ -300,10 +348,13 @@ class BaseItem(Base):
             for key in cls.__dict__.keys():
                 if key.startswith("_") or not cls.__dict__[key]:
                     continue
-                data = cls.__dict__[key]
+                try:
+                    data = cls.__class__.__dict__[key].__dict__
+                except KeyError:
+                    data = cls.__dict__[key].__dict__
                 info = {}
-                if "info" in data.__dict__.keys():
-                    info = data.__dict__["info"]
+                if "info" in data.keys():
+                    info = data["info"]
                 if not info.get("searchable", False) and not search_all:
                     continue
                 elif not info.get("safe", False) and safe:
@@ -331,11 +382,11 @@ class BaseItem(Base):
                 reverse=True,
             )
             items = items[offset : (offset + limit) if limit != -1 else len(items)]
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         db_debug(f"SEARCH {items}")
         return items
 
     @classmethod
+    @perfomance.wrapper
     async def delete(cls, id: int = None, iknowwhatimdoing: bool = False, **filters):
         """
         Deletes an item from the database.
@@ -349,7 +400,6 @@ class BaseItem(Base):
         """
         if not iknowwhatimdoing:
             raise database_exc.NotIknowWhatImDoing()
-        start_at = datetime.now()
         if not id:
             id = cls.id if cls.id else None
         if not id:
@@ -362,7 +412,6 @@ class BaseItem(Base):
             )
             await session.delete(cls)
             await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         db_debug(f"DELETE {cls}")
         return cls
 
@@ -374,7 +423,7 @@ class BaseItem(Base):
 
     @classmethod
     async def _filter_by(
-        cls, items: List[Self], strict: bool = False, **filters
+        cls, items: List[Self], strict: bool = False, similarity_threshold: float = 0.5, **filters
     ) -> List[Self]:
         result_items = []
         for item in items:
@@ -386,7 +435,7 @@ class BaseItem(Base):
                         matches = False
                         break
                 else:
-                    if cls.similarity(item_value, value) < 0.5:
+                    if cls.similarity(item_value, value) < similarity_threshold:
                         matches = False
                         break
             if matches:
@@ -442,6 +491,9 @@ class BaseItem(Base):
         if os.path.exists(blacklist_file):
             with open(blacklist_file) as f:
                 for line in f:
+                    if os.path.exists(os.path.join(os.path.dirname(blacklist_file), line.strip())):
+                        if cls._is_value_blacklisted(os.path.basename(line.strip()).split(".")[0], value):
+                            return True
                     if line.strip() == str(value):
                         return True
 
@@ -485,6 +537,8 @@ class BaseItem(Base):
         db_debug(f"GET AUDIT {self.audit}")
         return self.audit
 
+    _add = add
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self.id}>"
 
@@ -509,7 +563,7 @@ class User(BaseItem):
     )
     name = Column(String(48), info={"searchable": True, "safe": True})
     email = Column(String(128), unique=True)
-    password = Column(String(256))
+    password = Column(String(256), info={"crypt": True})
     reg_type = Column(String(32))
     email_confirm_code = Column(String(64))
     groups = Column(JSON)
@@ -525,7 +579,6 @@ class User(BaseItem):
         )
 
     async def create_session(cls, id: int = None, **kwargs) -> "Session":
-        start_at = datetime.now()
         if not id and hasattr(cls, "id"):
             id = cls.id
         if not id:
@@ -536,12 +589,10 @@ class User(BaseItem):
             _ = Session(user_id=id, token=cls._generate_secret(72), **kwargs)
             session.add(_)
             await session.commit()
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return _
 
     @classmethod
     async def get_sessions(cls, id: int = None) -> List["Session"]:
-        start_at = datetime.now()
         if not id and hasattr(cls, "id"):
             id = cls.id
         if not id:
@@ -554,7 +605,6 @@ class User(BaseItem):
                 .scalars()
                 .all()
             )
-        perfomance.all += [(datetime.now() - start_at).total_seconds()]
         return _
 
 
@@ -564,7 +614,8 @@ class Session(BaseItem):
 
     user_id = Column(Integer, ForeignKey(User.id), nullable=False)
     token = Column(String(256), nullable=False)
-    ip = Column(String(32))
+    original_ip = Column(String(32))
+    all_ips = Column(JSON)
     user_agent = Column(String(256))
     last_used = Column(DateTime(timezone=True))
     platform = Column(String(32))
@@ -604,7 +655,7 @@ class AuditLog(BaseItem):
 
     @classmethod
     async def add(cls, **kwargs):
-        await super().add(**kwargs)
+        await cls._add(**kwargs)
         await cls._delete_old_audits(
             kwargs["key"], kwargs["origin_table"], kwargs["origin_id"]
         )
