@@ -69,9 +69,9 @@ class Methods:
             if len(errors) == 0:
                 try:
                     email_confirm_code = (
-                        User._generate_secret(64) if account.email else None
+                        User._generate_secret(12) if account.email else None
                     )
-                    email_confirm_url = f"{app.api_url or request.base_url}account/auth/confirmEmail?key={email_confirm_code}"
+                    email_confirm_url = f"{app.api_url or request.base_url}account/auth/confirmEmail?key={email_confirm_code}&email={account.email}"
                     user = await User.add(
                         username=account.username,
                         email=account.email,
@@ -129,9 +129,15 @@ class Methods:
         @app.limit("5/minute")
         @track_usage
         async def confirmEmail(
-            request: Request, key: str, redirect: str = None
+            request: Request, key: str, redirect: str = None, email: str = None
         ) -> JSONResponse:
             user = await User.get(email_confirm_code=key)
+            if not email or user.email != email:
+                return JSONResponse(
+                    {"details": request.state.tl("EMAIL_NOT_FOUND")},
+                    status_code=400,
+                    headers=app.no_cache_headers,
+                )
             if user:
                 app.debug(f"User confirmed: {user}")
                 await user.update(

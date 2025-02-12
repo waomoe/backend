@@ -535,7 +535,10 @@ class BaseItem(Base):
                 ),
             )
         db_debug(f"GET AUDIT {self.audit}")
-        return self.audit
+        audit_dict = {}
+        for key in self.audit.__dict__.keys():
+            audit_dict[key] = self.audit.__dict__.get(key)
+        return audit_dict
 
     _add = add
 
@@ -559,11 +562,11 @@ class User(BaseItem):
     __table_args__ = {"comment": "main"}
 
     username = Column(
-        String(48), unique=True, nullable=False, info={"searchable": True, "safe": True}
+        String(48), unique=True, nullable=False, info={"searchable": True, "safe": True, "max_audits": 8}
     )
-    name = Column(String(48), info={"searchable": True, "safe": True})
-    email = Column(String(128), unique=True)
-    password = Column(String(256), info={"crypt": True})
+    name = Column(String(48), info={"searchable": True, "safe": True, "max_audits": 8})
+    email = Column(String(128), unique=True, info={"bypass_max_audits": True})
+    password = Column(String(256), info={"crypt": True, "max_audits": 2})
     reg_type = Column(String(32))
     email_confirm_code = Column(String(64))
     groups = Column(JSON)
@@ -614,12 +617,12 @@ class Session(BaseItem):
 
     user_id = Column(Integer, ForeignKey(User.id), nullable=False)
     token = Column(String(256), nullable=False)
-    original_ip = Column(String(32))
+    original_ip = Column(String(24))
     all_ips = Column(JSON)
     user_agent = Column(String(256))
     last_used = Column(DateTime(timezone=True))
-    platform = Column(String(32))
-    country = Column(String(32))
+    platform = Column(String(48))
+    country = Column(String(48))
     region = Column(String(32))
     city = Column(String(32))
     method = Column(String(32))
@@ -649,7 +652,7 @@ class AuditLog(BaseItem):
     def init_on_load(self) -> None:
         super().init_on_load()
         self.search = lambda **kwargs: self.__class__.search(
-            safe=False if "safe" not in kwargs else kwargs["safe"],
+            safe=kwargs.get("safe", False),
             **{k: v for k, v in kwargs.items() if k != "safe"},
         )
 
@@ -669,9 +672,19 @@ class AuditLog(BaseItem):
                 .order_by(cls.id.desc())
             )
             audits = result.scalars().all()
-            if len(audits) > int(getenv("MAX_AUDITS_PER_ITEM", 4)):
-                for audit in audits[int(getenv("MAX_AUDITS_PER_ITEM", 4)) :]:
+            audits = sorted(audits, key=lambda x: x.id)
+            max_audits = -1
+            for audit in audits:
+                audit: AuditLog
+                table = Base.metadata.tables.get(audit.origin_table)
+                if audit.key in table.columns:
+                    info = table.columns[audit.key].info
+                    max_audits = info.get("max_audits", int(getenv("MAX_AUDITS_PER_ITEM", 4))) if not info.get("bypass_max_audits", False) else -1
+                    if type(max_audits) is not int:
+                        max_audits = int(getenv("MAX_AUDITS_PER_ITEM", 4))
+                if len(audits) > max_audits and not max_audits == -1:
                     await session.delete(audit)
+                    audits.remove(audit)
             await session.commit()
 
 

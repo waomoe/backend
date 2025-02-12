@@ -20,6 +20,8 @@ from os import getenv
 import logging
 
 
+
+
 async def rechache_translations():
     while True:
         app.info("Chaching translations")
@@ -48,20 +50,23 @@ class InterceptHandler(logging.Handler):
 
 
 def format_record(record: dict) -> str:
-    format_string = LOGURU_FORMAT
+    format_string = \
+    "<green>{time:YYYY-MM-DD HH:mm:ss.SS}</green> | " \
+    "<level>{level: <8}</level> | " \
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 
     if record["extra"].get("payload") is not None:
         record["extra"]["payload"] = pformat(
             record["extra"]["payload"], indent=4, compact=True, width=88
         )
         format_string += "\n<level>{extra[payload]}</level>"
-
+    
     format_string += "{exception}\n"
     return format_string
 
 
 load_dotenv()
-version = getenv("VERSION", "0.3.4")  # RELEASE.GLOBAL.EDIT
+version = getenv("VERSION", "0.3.5")  # RELEASE.GLOBAL.EDIT
 tags_metadata = [
     {
         "name": "default",
@@ -99,8 +104,7 @@ app.info = app.logger.info
 app.error = app.logger.error
 app.warning = app.logger.warning
 app.success = app.logger.success
-if not bool(getenv("DEBUG", False)):
-    app.logger.debug = lambda *args, **kwargs: None
+app.logger.debug = (lambda *args, **kwargs: None) if bool(getenv("DEBUG", False)) else None
 app.logdebug = app.logger.debug
 app.tl = app.translator.tl
 app.tlbook = app.translator.tlbook
